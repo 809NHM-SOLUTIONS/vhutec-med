@@ -250,15 +250,9 @@ The backend uses environment variables for configuration.
 
 
 
-Example:
+DATABASE\_URL="postgresql://postgres:Mthosbudah@03@localhost:5432/vhutec-med"
 
+PORT=5000
 
-
-```text
-
-DATABASE\_URL=your\_postgresql\_connection\_string
-
-PORT=50
-
-
+JWT\_SECRET=
 
