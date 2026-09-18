@@ -5,3 +5,165 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  RECEPTIONIST
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_CONSULTATION
+  COMPLETED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  patient      Patient?
+  doctor       Doctor?
+  receptionist Receptionist?
+
+  @@map("users")
+}
+
+model Patient {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique @map("user_id")
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  dob       DateTime
+  phone     String
+  address   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@map("patients")
+}
+
+model Doctor {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique @map("user_id")
+  firstName  String   @map("first_name")
+  lastName   String   @map("last_name")
+  speciality String
+  licenseNo  String   @unique @map("license_no")
+  phone      String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departments   DoctorDepartment[]
+  appointments  Appointment[]
+  consultations Consultation[]
+
+  @@map("doctors")
+}
+
+model Receptionist {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique @map("user_id")
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  phone     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("receptionists")
+}
+
+model Department {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  doctors      DoctorDepartment[]
+  appointments Appointment[]
+
+  @@map("departments")
+}
+
+model DoctorDepartment {
+  doctorId     Int @map("doctor_id")
+  departmentId Int @map("department_id")
+
+  doctor     Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@id([doctorId, departmentId])
+  @@map("doctor_department")
+}
+
+model Appointment {
+  id           Int               @id @default(autoincrement())
+  patientId    Int               @map("patient_id")
+  doctorId     Int               @map("doctor_id")
+  departmentId Int               @map("department_id")
+  date         DateTime
+  timeSlot     String            @map("time_slot")
+  reason       String
+  status       AppointmentStatus
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  doctor       Doctor        @relation(fields: [doctorId], references: [id])
+  department   Department    @relation(fields: [departmentId], references: [id])
+  queue        Queue?
+  consultation Consultation?
+
+  @@map("appointments")
+}
+
+model Queue {
+  id            Int         @id @default(autoincrement())
+  appointmentId Int         @unique @map("appointment_id")
+  queueNumber   Int         @map("queue_number")
+  status        QueueStatus
+  checkedInAt   DateTime?   @map("checked_in_at")
+  calledAt      DateTime?   @map("called_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@map("queue")
+}
+
+model Consultation {
+  id            Int       @id @default(autoincrement())
+  appointmentId Int       @unique @map("appointment_id")
+  doctorId      Int       @map("doctor_id")
+  notes         String
+  startedAt     DateTime? @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctor      Doctor      @relation(fields: [doctorId], references: [id])
+
+  @@map("consultation")
+}
