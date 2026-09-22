@@ -9,10 +9,16 @@ import {
   FiUsers,
   FiX,
 } from "react-icons/fi";
+
 import { useState } from "react";
+import { Link, Routes, Route } from "react-router-dom";
+
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+
 import "./App.css";
 
-function App() {
+function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -53,15 +59,38 @@ function App() {
               Contact
             </a>
 
-            <button className="nav-login mobile-login">
+            {/* <button className="nav-login mobile-login">
               Login
-            </button>
+            </button> */}
+            <div className="mobile-auth-buttons">
+  <Link
+    to="/login"
+    className="nav-login mobile-login"
+    onClick={() => setMenuOpen(false)}
+  >
+    Login
+  </Link>
+
+  <Link
+    to="/signup"
+    className="nav-signup mobile-signup"
+    onClick={() => setMenuOpen(false)}
+  >
+    Sign Up
+  </Link>
+</div>
           </nav>
 
           <div className="nav-actions">
-            <button className="nav-login desktop-login">
-              Login
-            </button>
+            <div className="desktop-auth-buttons">
+  <Link to="\Login" className="nav-login desktop-login">
+    Login
+  </Link>
+
+  <Link to="/signup" className="nav-signup">
+    Sign Up
+  </Link>
+</div>
 
             <button
               className="menu-button"
@@ -467,6 +496,16 @@ function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+    </Routes>
   );
 }
 

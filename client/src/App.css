@@ -97,6 +97,7 @@
   font-weight: 650;
   cursor: pointer;
   transition: all 0.2s ease;
+  text-decoration: none;
 }
 
 .nav-login:hover {
@@ -1337,5 +1338,73 @@
 
   .brand-name {
     font-size: 0.95rem;
+  }
+}
+
+
+
+
+
+/* =========================================================
+   AUTH BUTTONS
+   Uses the existing Vhutec Med button colors/style
+   ========================================================= */
+
+.desktop-auth-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-signup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+
+  /* Same primary color family as Book an Appointment */
+  background: var(--primary-color, #0f766e);
+  color: #ffffff;
+
+  padding: 11px 18px;
+  border-radius: 8px;
+
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+
+  transition: all 0.2s ease;
+}
+
+.nav-signup:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+.mobile-auth-buttons {
+  display: none;
+}
+
+
+/* Mobile */
+@media (max-width: 768px) {
+  .mobile-auth-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .mobile-auth-buttons a {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+  }
+
+  .desktop-auth-buttons {
+    display: none;
   }
 }
