@@ -83,7 +83,7 @@ function LandingPage() {
 
           <div className="nav-actions">
             <div className="desktop-auth-buttons">
-  <Link to="\Login" className="nav-login desktop-login">
+  <Link to="\login" className="nav-login desktop-login">
     Login
   </Link>
 
