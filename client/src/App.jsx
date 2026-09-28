@@ -15,9 +15,9 @@ import { Link, Routes, Route } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-
+import ContactUs from "./pages/ContactUs";
 import "./App.css";
-
+import { FiFacebook, FiTwitter, FiInstagram, FiLinkedin, FiMail, FiMapPin } from "react-icons/fi";
 function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -55,9 +55,9 @@ function LandingPage() {
               About
             </a>
 
-            <a href="#contact" onClick={() => setMenuOpen(false)}>
-              Contact
-            </a>
+           <Link to="/contact" onClick={() => setMenuOpen(false)}>
+             Contact
+           </Link>
 
             {/* <button className="nav-login mobile-login">
               Login
@@ -465,18 +465,34 @@ function LandingPage() {
               Healthcare appointment and patient queue management,
               made simpler.
             </p>
+            <div className="footer-social">
+  <a href="https://facebook.com/yourpage" target="_blank" rel="noopener noreferrer" aria-label="Facebook">
+    <FiFacebook />
+  </a>
+  <a href="https://x.com/yourpage" target="_blank" rel="noopener noreferrer" aria-label="X (Twitter)">
+    <FiTwitter />
+  </a>
+  <a href="https://instagram.com/yourpage" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+    <FiInstagram />
+  </a>
+  <a href="https://linkedin.com/company/yourpage" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+    <FiLinkedin />
+  </a>
+</div>
           </div>
 
           <div className="footer-column">
-            <h4>Platform</h4>
-            <a href="#services">Services</a>
-            <a href="#how-it-works">How It Works</a>
-            <a href="#about">About</a>
+           <h4>Quick Links</h4>
+          <a href="#home">Home</a>
+          <a href="#services">Services</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#about">About</a>
+           <Link to="/contact">Contact Us</Link>
           </div>
 
           <div className="footer-column">
             <h4>Access</h4>
-            <a href="#home">Patient Login</a>
+            <Link to="/Login">Patient Login</Link>
             <a href="#home">Doctor Login</a>
             <a href="#home">Staff Login</a>
           </div>
@@ -505,6 +521,7 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/contact" element={<ContactUs />} />
     </Routes>
   );
 }
