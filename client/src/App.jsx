@@ -18,6 +18,8 @@ import Signup from "./pages/Signup";
 
 import "./App.css";
 
+import AdminDashboard from "./pages/AdminDashboard";
+
 function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -505,6 +507,7 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/admin/dashboard" element={<AdminDashboard />} />
     </Routes>
   );
 }

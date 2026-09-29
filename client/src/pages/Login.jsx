@@ -70,23 +70,29 @@ function Login() {
       console.log("Login successful:", data.user);
 
       // Navigate based on user role
-      switch (data.user.role) {
-  case "PATIENT":
-    navigate("/patient");
+      // Navigate based on user role
+
+switch (data.user.role) {
+
+    case "ADMIN":
+    navigate("/admin/dashboard");
     break;
 
-  case "DOCTOR":
-    navigate("/doctor");
-    break;
+    case "PATIENT":
+        navigate("/patient");
+        break;
 
-  case "RECEPTIONIST":
-    navigate("/receptionist");
-    break;
+    case "DOCTOR":
+        navigate("/doctor");
+        break;
 
-  default:
-    setError("User role is not recognised.");
+    case "RECEPTIONIST":
+        navigate("/receptionist");
+        break;
+
+    default:
+        setError("User role is not recognised.");
 }
-
     } catch (error) {
       console.error("Login error:", error);
 
