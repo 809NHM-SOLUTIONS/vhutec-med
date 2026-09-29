@@ -82,7 +82,9 @@ function Login() {
   case "RECEPTIONIST":
     navigate("/receptionist");
     break;
-
+  case "ADMIN":
+    navigate("/admin");
+    break;
   default:
     setError("User role is not recognised.");
 }
