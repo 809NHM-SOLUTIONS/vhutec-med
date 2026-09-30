@@ -15,7 +15,6 @@ function Login() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  
 
   // Display message received from Signup
   useEffect(() => {
@@ -58,8 +57,39 @@ function Login() {
 
       const data = await response.json();
 
+      // Log the complete response for debugging
+      console.log("Login API response:", data);
+
       if (!response.ok) {
         setError(data.message || "Unable to login.");
+        return;
+      }
+
+      // Make sure the backend returned the required authentication data
+      if (!data.token) {
+        console.error("Login response does not contain a token:", data);
+
+        setError("Login failed: authentication token was not provided.");
+        return;
+      }
+
+      if (!data.user) {
+        console.error("Login response does not contain user information:", data);
+
+        setError("Login failed: user information was not provided.");
+        return;
+      }
+
+      // Get the user role safely
+      const userRole = data.user.role?.toUpperCase();
+
+      console.log("Logged-in user:", data.user);
+      console.log("User role:", userRole);
+
+      if (!userRole) {
+        console.error("User role is missing:", data.user);
+
+        setError("Login failed: user role was not provided.");
         return;
       }
 
@@ -70,23 +100,30 @@ function Login() {
       console.log("Login successful:", data.user);
 
       // Navigate based on user role
-      switch (data.user.role) {
-  case "PATIENT":
-    navigate("/patient");
-    break;
+      switch (userRole) {
+        case "PATIENT":
+          navigate("/patient");
+          break;
 
-  case "DOCTOR":
-    navigate("/doctor");
-    break;
+        case "DOCTOR":
+          navigate("/doctor");
+          break;
 
-  case "RECEPTIONIST":
-    navigate("/receptionist");
-    break;
+        case "RECEPTIONIST":
+          navigate("/receptionist");
+          break;
 
-  default:
-    setError("User role is not recognised.");
-}
+        case "ADMIN":
+          navigate("/admin");
+          break;
 
+        default:
+          console.error("Unknown user role:", userRole);
+
+          setError(
+            `User role "${userRole}" is not recognised.`
+          );
+      }
     } catch (error) {
       console.error("Login error:", error);
 
@@ -117,13 +154,15 @@ function Login() {
           </div>
 
           <div className="auth-heading">
-            <span className="section-label">WELCOME BACK</span>
+            <span className="section-label">
+              WELCOME BACK
+            </span>
 
             <h1>Login to Vhutec Med</h1>
 
             <p>
-              Access your appointments, queue information and healthcare
-              services.
+              Access your appointments, queue information and
+              healthcare services.
             </p>
           </div>
 
@@ -139,10 +178,15 @@ function Login() {
             </div>
           )}
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+          <form
+            className="auth-form"
+            onSubmit={handleSubmit}
+          >
 
             <div className="form-group">
-              <label htmlFor="email">Email address</label>
+              <label htmlFor="email">
+                Email address
+              </label>
 
               <div className="input-wrapper">
                 <FiMail />
@@ -159,7 +203,9 @@ function Login() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="password">
+                Password
+              </label>
 
               <div className="input-wrapper">
                 <FiLock />
@@ -176,6 +222,7 @@ function Login() {
             </div>
 
             <div className="auth-options">
+
               <label className="remember-option">
                 <input type="checkbox" />
                 <span>Remember me</span>
@@ -184,6 +231,7 @@ function Login() {
               <a href="#forgot-password">
                 Forgot password?
               </a>
+
             </div>
 
             <button
@@ -191,13 +239,17 @@ function Login() {
               className="auth-submit"
               disabled={loading}
             >
-              {loading ? "Logging in..." : "Login"}
+              {loading
+                ? "Logging in..."
+                : "Login"}
             </button>
 
           </form>
 
           <div className="auth-footer">
-            <span>Don't have an account?</span>
+            <span>
+              Don't have an account?
+            </span>
 
             <Link to="/signup">
               Sign Up
