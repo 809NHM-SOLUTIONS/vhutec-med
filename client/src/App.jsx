@@ -17,7 +17,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ContactUs from "./pages/ContactUs";
 
-
+import {  FiMail,FiFacebook, FiTwitter, FiInstagram, FiLinkedin } from "react-icons/fi";
 import PatientDashboard from "./features/patient/PatientDashboard";
 
 import "./App.css";
