@@ -16,7 +16,7 @@ import { Link, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ContactUs from "./pages/ContactUs";
-
+=======
 
 import PatientDashboard from "./features/patient/PatientDashboard";
 
@@ -24,6 +24,7 @@ import "./App.css";
 
 import AdminDashboard from "./pages/AdminDashboard";
 
+>>>>>>>>> Temporary merge branch 2
 function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
