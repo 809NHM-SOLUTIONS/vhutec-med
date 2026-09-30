@@ -15,15 +15,15 @@ import { Link, Routes, Route } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-<<<<<<< HEAD
 import ContactUs from "./pages/ContactUs";
 =======
 
 import PatientDashboard from "./features/patient/PatientDashboard";
 
->>>>>>> f91646ac5675b574e0afe7ff662f441c7ec57dc2
 import "./App.css";
-import { FiFacebook, FiTwitter, FiInstagram, FiLinkedin, FiMail, FiMapPin } from "react-icons/fi";
+
+import AdminDashboard from "./pages/AdminDashboard";
+
 function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -527,12 +527,10 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
-<<<<<<< HEAD
       <Route path="/contact" element={<ContactUs />} />
-=======
 
+      <Route path="/admin/dashboard" element={<AdminDashboard />} />
       <Route path="/patient" element={<PatientDashboard />} />
->>>>>>> f91646ac5675b574e0afe7ff662f441c7ec57dc2
     </Routes>
   );
 }

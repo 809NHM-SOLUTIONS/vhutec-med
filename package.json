@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@prisma/config": "^7.10.0",
+    "prisma": "^8.0.0-rc.17"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20260901.1": true
+  }
+}
