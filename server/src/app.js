@@ -6,6 +6,8 @@ const helmet = require("helmet");
 
 const prisma = require("./prisma");
 
+const authRoutes = require("./routes/auth.routes");
+
 const userRoutes = require("./routes/userRoutes");
 const patientRoutes = require("./routes/patientRoutes");
 const doctorRoutes = require("./routes/doctorRoutes");
@@ -21,6 +23,7 @@ app.use(cors());
 app.use(helmet());
 app.use(express.json());
 
+app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/doctors", doctorRoutes);

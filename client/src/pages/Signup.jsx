@@ -1,14 +1,146 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   FiArrowLeft,
   FiLock,
   FiMail,
   FiPhone,
   FiUser,
+  FiCalendar,
+  FiMapPin,
 } from "react-icons/fi";
 import "./Auth.css";
 
 function Signup() {
+  const navigate = useNavigate();
+
+  const [formData, setFormData] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    dob: "",
+    address: "",
+    password: "",
+    confirmPassword: "",
+  });
+
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleChange = (event) => {
+    const { id, value } = event.target;
+
+    setFormData((previousData) => ({
+      ...previousData,
+      [id]: value,
+    }));
+  };
+
+const handleSubmit = async (event) => {
+  event.preventDefault();
+
+  setError("");
+
+  // Frontend validation
+  if (formData.firstName.trim().length < 2) {
+    setError("First name must be at least 2 characters.");
+    return;
+  }
+
+  if (formData.lastName.trim().length < 2) {
+    setError("Last name must be at least 2 characters.");
+    return;
+  }
+
+  if (!formData.email.includes("@")) {
+    setError("Please enter a valid email address.");
+    return;
+  }
+
+  if (formData.phone.trim().length < 10) {
+    setError("Phone number must be at least 10 characters.");
+    return;
+  }
+
+  if (!formData.dob) {
+    setError("Please select your date of birth.");
+    return;
+  }
+
+  if (formData.address.trim().length < 5) {
+    setError("Address must be at least 5 characters.");
+    return;
+  }
+
+  if (formData.password.length < 8) {
+    setError("Password must be at least 8 characters.");
+    return;
+  }
+
+  if (!/[A-Z]/.test(formData.password)) {
+    setError("Password must contain at least one uppercase letter.");
+    return;
+  }
+
+  if (!/[a-z]/.test(formData.password)) {
+    setError("Password must contain at least one lowercase letter.");
+    return;
+  }
+
+  if (!/[0-9]/.test(formData.password)) {
+    setError("Password must contain at least one number.");
+    return;
+  }
+
+  if (formData.password !== formData.confirmPassword) {
+    setError("Passwords do not match.");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const response = await fetch(
+      "http://localhost:5000/api/auth/register",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      if (data.errors && data.errors.length > 0) {
+        setError(data.errors[0].message);
+      } else {
+        setError(data.message || "Unable to create account.");
+      }
+
+      return;
+    }
+
+    navigate("/login", {
+      state: {
+        message: "Account created successfully. Please login.",
+      },
+    });
+
+  } catch (error) {
+    console.error("Registration error:", error);
+
+    setError(
+      "Unable to connect to the server. Please try again."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
   return (
     <div className="auth-page">
       <div className="auth-container">
@@ -38,7 +170,13 @@ function Signup() {
             </p>
           </div>
 
-          <form className="auth-form">
+          {error && (
+            <div className="auth-error">
+              {error}
+            </div>
+          )}
+
+          <form className="auth-form" onSubmit={handleSubmit}>
 
             <div className="form-row">
 
@@ -52,6 +190,8 @@ function Signup() {
                     id="firstName"
                     type="text"
                     placeholder="First name"
+                    value={formData.firstName}
+                    onChange={handleChange}
                     required
                   />
                 </div>
@@ -67,6 +207,8 @@ function Signup() {
                     id="lastName"
                     type="text"
                     placeholder="Last name"
+                    value={formData.lastName}
+                    onChange={handleChange}
                     required
                   />
                 </div>
@@ -75,15 +217,17 @@ function Signup() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="signupEmail">Email address</label>
+              <label htmlFor="email">Email address</label>
 
               <div className="input-wrapper">
                 <FiMail />
 
                 <input
-                  id="signupEmail"
+                  id="email"
                   type="email"
                   placeholder="Enter your email"
+                  value={formData.email}
+                  onChange={handleChange}
                   required
                 />
               </div>
@@ -99,21 +243,62 @@ function Signup() {
                   id="phone"
                   type="tel"
                   placeholder="Enter your phone number"
+                  value={formData.phone}
+                  onChange={handleChange}
                   required
                 />
               </div>
             </div>
 
+            <div className="form-row">
+
+              <div className="form-group">
+                <label htmlFor="dob">Date of birth</label>
+
+                <div className="input-wrapper">
+                  <FiCalendar />
+
+                  <input
+                    id="dob"
+                    type="date"
+                    value={formData.dob}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="address">Address</label>
+
+                <div className="input-wrapper">
+                  <FiMapPin />
+
+                  <input
+                    id="address"
+                    type="text"
+                    placeholder="Enter your address"
+                    value={formData.address}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+              </div>
+
+            </div>
+
             <div className="form-group">
-              <label htmlFor="signupPassword">Password</label>
+              <label htmlFor="password">Password</label>
 
               <div className="input-wrapper">
                 <FiLock />
 
                 <input
-                  id="signupPassword"
+                  id="password"
                   type="password"
                   placeholder="Create a password"
+                  value={formData.password}
+                  onChange={handleChange}
                   required
                 />
               </div>
@@ -131,13 +316,19 @@ function Signup() {
                   id="confirmPassword"
                   type="password"
                   placeholder="Confirm your password"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
                   required
                 />
               </div>
             </div>
 
-            <button type="submit" className="auth-submit">
-              Create Account
+            <button
+              type="submit"
+              className="auth-submit"
+              disabled={loading}
+            >
+              {loading ? "Creating Account..." : "Create Account"}
             </button>
 
           </form>

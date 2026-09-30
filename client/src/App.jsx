@@ -15,7 +15,13 @@ import { Link, Routes, Route } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+<<<<<<< HEAD
 import ContactUs from "./pages/ContactUs";
+=======
+
+import PatientDashboard from "./features/patient/PatientDashboard";
+
+>>>>>>> f91646ac5675b574e0afe7ff662f441c7ec57dc2
 import "./App.css";
 import { FiFacebook, FiTwitter, FiInstagram, FiLinkedin, FiMail, FiMapPin } from "react-icons/fi";
 function LandingPage() {
@@ -83,7 +89,7 @@ function LandingPage() {
 
           <div className="nav-actions">
             <div className="desktop-auth-buttons">
-  <Link to="\Login" className="nav-login desktop-login">
+  <Link to="\login" className="nav-login desktop-login">
     Login
   </Link>
 
@@ -521,7 +527,12 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+<<<<<<< HEAD
       <Route path="/contact" element={<ContactUs />} />
+=======
+
+      <Route path="/patient" element={<PatientDashboard />} />
+>>>>>>> f91646ac5675b574e0afe7ff662f441c7ec57dc2
     </Routes>
   );
 }
