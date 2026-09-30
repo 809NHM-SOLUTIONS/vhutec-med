@@ -6,6 +6,8 @@ const helmet = require("helmet");
 
 const prisma = require("./prisma");
 
+const initializeDefaultAdmin = require("./data/initializer");
+
 const authRoutes = require("./routes/auth.routes");
 
 const userRoutes = require("./routes/userRoutes");
@@ -60,6 +62,24 @@ app.get("/api/health/db", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-    console.log(`Vhutec Med server running on http://localhost:${PORT}`);
-});
+const startServer = async () => {
+    try {
+        await prisma.$connect();
+
+        console.log("Database connection established.");
+
+        await initializeDefaultAdmin();
+
+        app.listen(PORT, () => {
+            console.log(
+                `Vhutec Med server running on http://localhost:${PORT}`
+            );
+        });
+
+    } catch (error) {
+        console.error("Failed to start Vhutec Med server:", error);
+        process.exit(1);
+    }
+};
+
+startServer();

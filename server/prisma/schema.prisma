@@ -4,12 +4,15 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+
 }
 
 enum UserRole {
+  
   PATIENT
   DOCTOR
   RECEPTIONIST
+  ADMIN
 }
 
 enum AppointmentStatus {
