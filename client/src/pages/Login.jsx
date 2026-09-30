@@ -71,6 +71,10 @@ function Login() {
 
       // Navigate based on user role
       switch (data.user.role) {
+         case "ADMIN":
+    navigate("/admin/dashboard");
+    break;
+    
   case "PATIENT":
     navigate("/patient");
     break;
