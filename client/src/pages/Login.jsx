@@ -126,7 +126,8 @@ function Login() {
             <h1>Login to Vhutec Med</h1>
 
             <p>
-              Access your appointments, queue information and healthcare
+              Access your appointments, queue information and healthcarecode client/src/pages/Login.jsx
+
               services.
             </p>
           </div>
@@ -202,6 +203,7 @@ function Login() {
 
           <div className="auth-footer">
             <span>Don't have an account?</span>
+code client/src/pages/Login.jsx
 
             <Link to="/signup">
               Sign Up
