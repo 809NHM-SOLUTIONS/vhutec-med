@@ -16,7 +16,7 @@ import { Link, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ContactUs from "./pages/ContactUs";
-=======
+
 
 import PatientDashboard from "./features/patient/PatientDashboard";
 
