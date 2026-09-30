@@ -1,0 +1,13 @@
+[1mdiff --git a/client/src/App.jsx b/client/src/App.jsx[m
+[1mindex 6b7cb5f..54b139e 100644[m
+[1m--- a/client/src/App.jsx[m
+[1m+++ b/client/src/App.jsx[m
+[36m@@ -16,7 +16,7 @@[m [mimport { Link, Routes, Route } from "react-router-dom";[m
+ import Login from "./pages/Login";[m
+ import Signup from "./pages/Signup";[m
+ import ContactUs from "./pages/ContactUs";[m
+[31m-=======[m
+[32m+[m
+ [m
+ import PatientDashboard from "./features/patient/PatientDashboard";[m
+ [m
