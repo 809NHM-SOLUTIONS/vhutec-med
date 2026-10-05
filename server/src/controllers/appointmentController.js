@@ -31,6 +31,60 @@ const getAppointments = async (req, res) => {
 };
 
 
+// GET /api/appointments/me
+// Returns only the appointments belonging to the currently authenticated patient.
+const getMyAppointments = async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication required"
+            });
+        }
+
+        const patient = await prisma.patient.findUnique({
+            where: { userId: Number(userId) }
+        });
+
+        if (!patient) {
+            return res.status(404).json({
+                success: false,
+                message: "Patient profile not found for this account"
+            });
+        }
+
+        const appointments = await prisma.appointment.findMany({
+            where: {
+                patientId: patient.id
+            },
+            include: {
+                doctor: true,
+                department: true,
+                queue: true,
+                consultation: true
+            },
+            orderBy: {
+                date: "desc"
+            }
+        });
+
+        res.json({
+            success: true,
+            data: appointments
+        });
+    } catch (error) {
+        console.error("Get my appointments error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to retrieve your appointments"
+        });
+    }
+};
+
+
 // GET /api/appointments/:id
 const getAppointmentById = async (req, res) => {
     try {
@@ -79,10 +133,13 @@ const getAppointmentById = async (req, res) => {
 
 
 // POST /api/appointments
+// Patients booking for themselves: patientId is derived from the verified
+// JWT (req.user), never trusted from the request body.
+// Admin/receptionist (or unauthenticated internal calls, if any still exist)
+// may still pass patientId explicitly in the body.
 const createAppointment = async (req, res) => {
     try {
         const {
-            patientId,
             doctorId,
             departmentId,
             date,
@@ -91,7 +148,25 @@ const createAppointment = async (req, res) => {
             status
         } = req.body;
 
-        const parsedPatientId = Number(patientId);
+        let parsedPatientId;
+
+        if (req.user?.role === "PATIENT") {
+            const patient = await prisma.patient.findUnique({
+                where: { userId: Number(req.user.userId) }
+            });
+
+            if (!patient) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Patient profile not found for this account"
+                });
+            }
+
+            parsedPatientId = patient.id;
+        } else {
+            parsedPatientId = Number(req.body.patientId);
+        }
+
         const parsedDoctorId = Number(doctorId);
         const parsedDepartmentId = Number(departmentId);
 
@@ -413,6 +488,7 @@ const deleteAppointment = async (req, res) => {
 
 module.exports = {
     getAppointments,
+    getMyAppointments,
     getAppointmentById,
     createAppointment,
     updateAppointment,

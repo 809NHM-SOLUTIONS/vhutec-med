@@ -32,6 +32,59 @@ const getPatients = async (req, res) => {
     }
 };
 
+// GET /api/patients/me
+// Returns the full Patient record (+ account email/role) for the
+// currently authenticated user, derived from the verified JWT —
+// never from a client-supplied id.
+const getMyProfile = async (req, res) => {
+    try {
+        // authController signs jwt.sign({ userId: user.id, role }, ...),
+        // so authenticate's req.user = { userId, role, iat, exp }.
+        const userId = req.user.userId;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication required"
+            });
+        }
+
+        const patient = await prisma.patient.findUnique({
+            where: {
+                userId: Number(userId)
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true
+                    }
+                }
+            }
+        });
+
+        if (!patient) {
+            return res.status(404).json({
+                success: false,
+                message: "Patient profile not found for this account"
+            });
+        }
+
+        res.json({
+            success: true,
+            data: patient
+        });
+    } catch (error) {
+        console.error("Get my profile error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to retrieve patient profile"
+        });
+    }
+};
+
 // GET /api/patients/:id
 const getPatientById = async (req, res) => {
     try {
@@ -263,6 +316,7 @@ const deletePatient = async (req, res) => {
 
 module.exports = {
     getPatients,
+    getMyProfile,
     getPatientById,
     createPatient,
     updatePatient,
