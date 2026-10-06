@@ -9,22 +9,21 @@ import {
   FiUsers,
   FiX,
 } from "react-icons/fi";
+import {  FiFacebook, FiTwitter, FiInstagram, FiLinkedin } from "react-icons/fi";
 
 import { useState } from "react";
 import { Link, Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import ContactUs from "./pages/ContactUs";
-
-import {  FiFacebook, FiTwitter, FiInstagram, FiLinkedin } from "react-icons/fi";
-import PatientDashboard from "./pages/patient/PatientDashboard";
 
 import "./App.css";
 
-import AdminDashboard from "./pages/AdminDashboard";
-import ReceptionistDashboard from "./pages/ReceptionistDashboard";
-import DoctorDashboard from "./pages/DoctorDashboard";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import DoctorDashboard from "./pages/doctor/DoctorDashboard";
+import ReceptionistDashboard from "./pages/receptionist/ReceptionistDashboard";
+import PatientDashboard from "./pages/patient/PatientDashboard";
+import ContactUs from "./pages/contact/ContactUs";
 
 function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
