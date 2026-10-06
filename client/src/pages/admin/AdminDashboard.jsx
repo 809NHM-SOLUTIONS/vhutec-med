@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import axios from "axios";
 import {
   FiActivity,
   FiCalendar,
@@ -16,14 +17,49 @@ import {
 } from "react-icons/fi";
 import "./AdminDashboard.css";
 
+
 const AdminDashboard = () => {
+
+  
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const [showDoctorForm, setShowDoctorForm] = useState(false);
+  const [showReceptionistForm, setShowReceptionistForm] = useState(false);
+
+  const [departments, setDepartments] = useState([]);
+const [doctors, setDoctors] = useState([]);
+const [doctorsLoading, setDoctorsLoading] = useState(true);
+
+const [receptionists, setReceptionists] = useState([]);
+const [receptionistsLoading, setReceptionistsLoading] = useState(true);
+
+  const [doctorForm, setDoctorForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    speciality: "",
+    licenseNo: "",
+    departmentId: ""
+  });
+
+  const [receptionistForm, setReceptionistForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: ""
+  });
+
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffMessage, setStaffMessage] = useState(null);
+
 
   const navigation = [
     { label: "Dashboard", icon: FiGrid },
     { label: "Users", icon: FiUsers },
     { label: "Doctors", icon: FiUserCheck },
+    { label: "Receptionists", icon: FiUsers },
     { label: "Patients", icon: FiUsers },
     { label: "Appointments", icon: FiCalendar },
     { label: "Reports", icon: FiFileText },
@@ -71,6 +107,237 @@ const AdminDashboard = () => {
     setActiveSection(section);
     setSidebarOpen(false);
   };
+
+    const handleDoctorChange = (event) => {
+    const { name, value } = event.target;
+
+    setDoctorForm((previous) => ({
+      ...previous,
+      [name]: value
+    }));
+  };
+
+  const handleReceptionistChange = (event) => {
+    const { name, value } = event.target;
+
+    setReceptionistForm((previous) => ({
+      ...previous,
+      [name]: value
+    }));
+  };
+
+    const handleCreateDoctor = async (event) => {
+    event.preventDefault();
+
+    setStaffLoading(true);
+    setStaffMessage(null);
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const response = await axios.post(
+        "http://localhost:5000/api/admin/staff/doctor",
+        {
+          ...doctorForm,
+          departmentId: Number(doctorForm.departmentId)
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const result = response.data;
+
+      setStaffMessage({
+        type: "success",
+        title: "Doctor account created",
+        message: result.message,
+        temporaryPassword:
+          result.development
+            ? result.data?.temporaryPassword
+            : null
+      });
+
+      setDoctorForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        speciality: "",
+        licenseNo: "",
+        departmentId: ""
+      });
+      await loadDoctors();
+
+    } catch (error) {
+      console.error("Create doctor error:", error);
+
+      setStaffMessage({
+        type: "error",
+        title: "Unable to create doctor",
+        message:
+          error.response?.data?.message ||
+          "Something went wrong while creating the doctor account."
+      });
+
+    } finally {
+      setStaffLoading(false);
+    }
+  };
+
+    const handleCreateReceptionist = async (event) => {
+    event.preventDefault();
+
+    setStaffLoading(true);
+    setStaffMessage(null);
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const response = await axios.post(
+        "http://localhost:5000/api/admin/staff/receptionist",
+        receptionistForm,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const result = response.data;
+
+      setStaffMessage({
+        type: "success",
+        title: "Receptionist account created",
+        message: result.message,
+        temporaryPassword:
+          result.development
+            ? result.data?.temporaryPassword
+            : null
+      });
+
+     setReceptionistForm({
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: ""
+});
+
+await loadReceptionists();
+
+    } catch (error) {
+      console.error("Create receptionist error:", error);
+
+      setStaffMessage({
+        type: "error",
+        title: "Unable to create receptionist",
+        message:
+          error.response?.data?.message ||
+          "Something went wrong while creating the receptionist account."
+      });
+
+    } finally {
+      setStaffLoading(false);
+    }
+  };
+  
+
+    useEffect(() => {
+    const loadDepartments = async () => {
+      try {
+        const token = localStorage.getItem("token");
+
+        const response = await axios.get(
+          "http://localhost:5000/api/departments",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        );
+
+        const departmentData =
+          response.data?.data ||
+          response.data?.departments ||
+          response.data ||
+          [];
+
+        setDepartments(departmentData);
+      } catch (error) {
+        console.error("Failed to load departments:", error);
+      }
+    };
+
+    loadDepartments();
+  }, []);
+
+
+  const loadDoctors = async () => {
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.get(
+      "http://localhost:5000/api/doctors",
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+
+    const doctorData =
+      response.data?.data || [];
+
+    setDoctors(doctorData);
+
+  } catch (error) {
+    console.error(
+      "Failed to load doctors:",
+      error
+    );
+  } finally {
+    setDoctorsLoading(false);
+  }
+};
+
+const loadReceptionists = async () => {
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.get(
+      "http://localhost:5000/api/receptionists",
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+
+    const receptionistData =
+      response.data?.data || [];
+
+    setReceptionists(receptionistData);
+
+  } catch (error) {
+    console.error(
+      "Failed to load receptionists:",
+      error
+    );
+  } finally {
+    setReceptionistsLoading(false);
+  }
+};
+
+
+  useEffect(() => {
+    loadDoctors();
+}, []);
+
+useEffect(() => {
+  loadReceptionists();
+}, []);
 
   const renderDashboard = () => (
     <>
@@ -256,12 +523,136 @@ const AdminDashboard = () => {
     </>
   );
 
-  const renderUsers = () => (
+    const renderUsers = () => (
     <>
       <div className="admin-section-header">
-        <h2>User Management</h2>
-        <p>Manage registered users and their system roles.</p>
+        <div>
+          <h2>User Management</h2>
+          <p>Manage registered users and create receptionist accounts.</p>
+        </div>
+
+        <button
+          className="admin-primary-button"
+          onClick={() => {
+            setShowReceptionistForm((previous) => !previous);
+            setShowDoctorForm(false);
+            setStaffMessage(null);
+          }}
+        >
+          <FiUsers />
+          {showReceptionistForm
+            ? "Close Form"
+            : "Add Receptionist"}
+        </button>
       </div>
+
+      {showReceptionistForm && (
+        <section className="admin-card admin-form-card">
+          <div className="admin-card-header">
+            <div>
+              <h3>Create Receptionist Account</h3>
+              <p>
+                Create a receptionist login and send their access details.
+              </p>
+            </div>
+
+            <FiUsers />
+          </div>
+
+          <form
+            className="admin-staff-form"
+            onSubmit={handleCreateReceptionist}
+          >
+            <div className="admin-form-grid">
+              <div className="admin-form-group">
+                <label>First Name</label>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={receptionistForm.firstName}
+                  onChange={handleReceptionistChange}
+                  placeholder="Enter first name"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Last Name</label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={receptionistForm.lastName}
+                  onChange={handleReceptionistChange}
+                  placeholder="Enter last name"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Email Address</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={receptionistForm.email}
+                  onChange={handleReceptionistChange}
+                  placeholder="receptionist@example.com"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Phone Number</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={receptionistForm.phone}
+                  onChange={handleReceptionistChange}
+                  placeholder="0712345678"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="admin-form-actions">
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => setShowReceptionistForm(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="admin-primary-button"
+                disabled={staffLoading}
+              >
+                {staffLoading
+                  ? "Creating..."
+                  : "Create Receptionist"}
+              </button>
+            </div>
+          </form>
+
+          {staffMessage && (
+            <div
+              className={`admin-form-message ${staffMessage.type}`}
+            >
+              <strong>{staffMessage.title}</strong>
+              <span>{staffMessage.message}</span>
+
+              {staffMessage.temporaryPassword && (
+                <div className="admin-development-password">
+                  <span>Development temporary password</span>
+                  <strong>
+                    {staffMessage.temporaryPassword}
+                  </strong>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="admin-card">
         <div className="admin-card-header">
@@ -287,28 +678,44 @@ const AdminDashboard = () => {
                 <td>Thabo Mokoena</td>
                 <td>thabo.mokoena@example.com</td>
                 <td>Patient</td>
-                <td><span className="admin-status active">Active</span></td>
+                <td>
+                  <span className="admin-status active">
+                    Active
+                  </span>
+                </td>
               </tr>
 
               <tr>
                 <td>Dr. Naledi Maseko</td>
                 <td>naledi.maseko@vhutecmed.co.za</td>
                 <td>Doctor</td>
-                <td><span className="admin-status active">Active</span></td>
+                <td>
+                  <span className="admin-status active">
+                    Active
+                  </span>
+                </td>
               </tr>
 
               <tr>
                 <td>Lerato Dlamini</td>
                 <td>lerato.dlamini@example.com</td>
                 <td>Patient</td>
-                <td><span className="admin-status active">Active</span></td>
+                <td>
+                  <span className="admin-status active">
+                    Active
+                  </span>
+                </td>
               </tr>
 
               <tr>
                 <td>Sipho Nkosi</td>
                 <td>sipho.nkosi@vhutecmed.co.za</td>
                 <td>Receptionist</td>
-                <td><span className="admin-status inactive">Inactive</span></td>
+                <td>
+                  <span className="admin-status inactive">
+                    Inactive
+                  </span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -317,12 +724,184 @@ const AdminDashboard = () => {
     </>
   );
 
-  const renderDoctors = () => (
+   const renderDoctors = () => (
     <>
       <div className="admin-section-header">
-        <h2>Doctor Management</h2>
-        <p>View doctors, departments and current availability.</p>
+        <div>
+          <h2>Doctor Management</h2>
+          <p>
+            Manage doctors, departments and medical staff accounts.
+          </p>
+        </div>
+
+        <button
+          className="admin-primary-button"
+          onClick={() => {
+            setShowDoctorForm((previous) => !previous);
+            setShowReceptionistForm(false);
+            setStaffMessage(null);
+          }}
+        >
+          <FiUserCheck />
+          {showDoctorForm ? "Close Form" : "Add Doctor"}
+        </button>
       </div>
+
+      {showDoctorForm && (
+        <section className="admin-card admin-form-card">
+          <div className="admin-card-header">
+            <div>
+              <h3>Create Doctor Account</h3>
+              <p>
+                Register a doctor and assign them to a department.
+              </p>
+            </div>
+
+            <FiUserCheck />
+          </div>
+
+          <form
+            className="admin-staff-form"
+            onSubmit={handleCreateDoctor}
+          >
+            <div className="admin-form-grid">
+              <div className="admin-form-group">
+                <label>First Name</label>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={doctorForm.firstName}
+                  onChange={handleDoctorChange}
+                  placeholder="Enter first name"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Last Name</label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={doctorForm.lastName}
+                  onChange={handleDoctorChange}
+                  placeholder="Enter last name"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Email Address</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={doctorForm.email}
+                  onChange={handleDoctorChange}
+                  placeholder="doctor@example.com"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Phone Number</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={doctorForm.phone}
+                  onChange={handleDoctorChange}
+                  placeholder="0712345678"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Speciality</label>
+                <input
+                  type="text"
+                  name="speciality"
+                  value={doctorForm.speciality}
+                  onChange={handleDoctorChange}
+                  placeholder="e.g. General Practitioner"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>License Number</label>
+                <input
+                  type="text"
+                  name="licenseNo"
+                  value={doctorForm.licenseNo}
+                  onChange={handleDoctorChange}
+                  placeholder="Enter license number"
+                  required
+                />
+              </div>
+
+              <div className="admin-form-group admin-form-full">
+                <label>Department</label>
+
+                <select
+                  name="departmentId"
+                  value={doctorForm.departmentId}
+                  onChange={handleDoctorChange}
+                  required
+                >
+                  <option value="">
+                    Select department
+                  </option>
+
+                  {departments.map((department) => (
+                    <option
+                      key={department.id}
+                      value={department.id}
+                    >
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="admin-form-actions">
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => setShowDoctorForm(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="admin-primary-button"
+                disabled={staffLoading}
+              >
+                {staffLoading
+                  ? "Creating..."
+                  : "Create Doctor"}
+              </button>
+            </div>
+          </form>
+
+          {staffMessage && (
+            <div
+              className={`admin-form-message ${staffMessage.type}`}
+            >
+              <strong>{staffMessage.title}</strong>
+              <span>{staffMessage.message}</span>
+
+              {staffMessage.temporaryPassword && (
+                <div className="admin-development-password">
+                  <span>Development temporary password</span>
+                  <strong>
+                    {staffMessage.temporaryPassword}
+                  </strong>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="admin-card">
         <div className="admin-card-header">
@@ -335,48 +914,274 @@ const AdminDashboard = () => {
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>
-              <tr>
-                <th>Doctor</th>
-                <th>Department</th>
-                <th>Room</th>
-                <th>Status</th>
-              </tr>
-            </thead>
+    <tr>
+        <th>Doctor</th>
+        <th>Department</th>
+        <th>Speciality</th>
+        <th>Email</th>
+    </tr>
+</thead>
 
-            <tbody>
-              <tr>
-                <td>Dr. Naledi Maseko</td>
-                <td>General Medicine</td>
-                <td>Room 4</td>
-                <td><span className="admin-status active">Available</span></td>
-              </tr>
+<tbody>
+    {doctorsLoading ? (
+        <tr>
+            <td colSpan="4">
+                Loading medical staff...
+            </td>
+        </tr>
+    ) : doctors.length === 0 ? (
+        <tr>
+            <td colSpan="4">
+                No doctors have been registered yet.
+            </td>
+        </tr>
+    ) : (
+        doctors.map((doctor) => (
+            <tr key={doctor.id}>
+                <td>
+                    Dr. {doctor.firstName} {doctor.lastName}
+                </td>
 
-              <tr>
-                <td>Dr. Kabelo Dlamini</td>
-                <td>Dental Care</td>
-                <td>Room 2</td>
-                <td><span className="admin-status active">Available</span></td>
-              </tr>
+                <td>
+                    {doctor.departments?.length > 0
+                        ? doctor.departments
+                            .map(
+                                (item) =>
+                                    item.department?.name
+                            )
+                            .filter(Boolean)
+                            .join(", ")
+                        : "Not assigned"}
+                </td>
 
-              <tr>
-                <td>Dr. Lerato Nkosi</td>
-                <td>Dermatology</td>
-                <td>Room 6</td>
-                <td><span className="admin-status busy">In Consultation</span></td>
-              </tr>
+                <td>
+                    {doctor.speciality}
+                </td>
 
-              <tr>
-                <td>Dr. Musa Khumalo</td>
-                <td>Paediatrics</td>
-                <td>Room 8</td>
-                <td><span className="admin-status inactive">Off Duty</span></td>
-              </tr>
-            </tbody>
+                <td>
+                    {doctor.user?.email || "No email"}
+                </td>
+            </tr>
+        ))
+    )}
+</tbody>
           </table>
         </div>
       </section>
     </>
   );
+
+
+  const renderReceptionists = () => (
+  <>
+    <div className="admin-section-header">
+      <div>
+        <h2>Receptionist Management</h2>
+        <p>
+          Manage receptionists registered at Vhutec Med.
+        </p>
+      </div>
+
+      <button
+        className="admin-primary-button"
+        onClick={() => {
+          setShowReceptionistForm((previous) => !previous);
+          setShowDoctorForm(false);
+          setStaffMessage(null);
+        }}
+      >
+        <FiUsers />
+        {showReceptionistForm
+          ? "Close Form"
+          : "Add Receptionist"}
+      </button>
+    </div>
+
+    {showReceptionistForm && (
+      <section className="admin-card admin-form-card">
+        <div className="admin-card-header">
+          <div>
+            <h3>Create Receptionist Account</h3>
+            <p>
+              Create a receptionist login and send their access details.
+            </p>
+          </div>
+
+          <FiUsers />
+        </div>
+
+        <form
+          className="admin-staff-form"
+          onSubmit={handleCreateReceptionist}
+        >
+          <div className="admin-form-grid">
+            <div className="admin-form-group">
+              <label>First Name</label>
+
+              <input
+                type="text"
+                name="firstName"
+                value={receptionistForm.firstName}
+                onChange={handleReceptionistChange}
+                placeholder="Enter first name"
+                required
+              />
+            </div>
+
+            <div className="admin-form-group">
+              <label>Last Name</label>
+
+              <input
+                type="text"
+                name="lastName"
+                value={receptionistForm.lastName}
+                onChange={handleReceptionistChange}
+                placeholder="Enter last name"
+                required
+              />
+            </div>
+
+            <div className="admin-form-group">
+              <label>Email Address</label>
+
+              <input
+                type="email"
+                name="email"
+                value={receptionistForm.email}
+                onChange={handleReceptionistChange}
+                placeholder="receptionist@example.com"
+                required
+              />
+            </div>
+
+            <div className="admin-form-group">
+              <label>Phone Number</label>
+
+              <input
+                type="tel"
+                name="phone"
+                value={receptionistForm.phone}
+                onChange={handleReceptionistChange}
+                placeholder="0712345678"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="admin-form-actions">
+            <button
+              type="button"
+              className="admin-secondary-button"
+              onClick={() => setShowReceptionistForm(false)}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              className="admin-primary-button"
+              disabled={staffLoading}
+            >
+              {staffLoading
+                ? "Creating..."
+                : "Create Receptionist"}
+            </button>
+          </div>
+        </form>
+
+        {staffMessage && (
+          <div
+            className={`admin-form-message ${staffMessage.type}`}
+          >
+            <strong>{staffMessage.title}</strong>
+            <span>{staffMessage.message}</span>
+
+            {staffMessage.temporaryPassword && (
+              <div className="admin-development-password">
+                <span>Development temporary password</span>
+
+                <strong>
+                  {staffMessage.temporaryPassword}
+                </strong>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    )}
+
+    <section className="admin-card">
+      <div className="admin-card-header">
+        <div>
+          <h3>Registered Receptionists</h3>
+          <p>
+            Receptionists currently registered at Vhutec Med.
+          </p>
+        </div>
+
+        <span className="admin-card-count">
+          {receptionists.length}{" "}
+          {receptionists.length === 1
+            ? "Receptionist"
+            : "Receptionists"}
+        </span>
+      </div>
+
+      <div className="admin-table-wrapper">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Receptionist</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {receptionistsLoading ? (
+              <tr>
+                <td colSpan="4">
+                  Loading receptionists...
+                </td>
+              </tr>
+            ) : receptionists.length === 0 ? (
+              <tr>
+                <td colSpan="4">
+                  No receptionists have been registered yet.
+                </td>
+              </tr>
+            ) : (
+              receptionists.map((receptionist) => (
+                <tr key={receptionist.id}>
+                  <td>
+                    {receptionist.firstName}{" "}
+                    {receptionist.lastName}
+                  </td>
+
+                  <td>
+                    {receptionist.user?.email ||
+                      "No email"}
+                  </td>
+
+                  <td>
+                    {receptionist.phone || "No phone"}
+                  </td>
+
+                  <td>
+                    <span className="admin-status active">
+                      Registered
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </>
+);
 
   const renderPatients = () => (
     <>
@@ -627,23 +1432,32 @@ const AdminDashboard = () => {
   );
 
   const renderActiveSection = () => {
-    switch (activeSection) {
-      case "Users":
-        return renderUsers();
-      case "Doctors":
-        return renderDoctors();
-      case "Patients":
-        return renderPatients();
-      case "Appointments":
-        return renderAppointments();
-      case "Reports":
-        return renderReports();
-      case "Settings":
-        return renderSettings();
-      default:
-        return renderDashboard();
-    }
-  };
+  switch (activeSection) {
+    case "Users":
+      return renderUsers();
+
+    case "Doctors":
+      return renderDoctors();
+
+    case "Receptionists":
+      return renderReceptionists();
+
+    case "Patients":
+      return renderPatients();
+
+    case "Appointments":
+      return renderAppointments();
+
+    case "Reports":
+      return renderReports();
+
+    case "Settings":
+      return renderSettings();
+
+    default:
+      return renderDashboard();
+  }
+};
 
   return (
     <div className="admin-dashboard">
