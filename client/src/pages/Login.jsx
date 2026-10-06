@@ -88,13 +88,15 @@ function Login() {
     break;
 
 
+      case "ADMIN":
+          navigate("/admin/dashboard");
+          break;
+          
   default:
     setError("User role is not recognised.");
 }
 
-        case "ADMIN":
-          navigate("/admin/dashboard");
-          break;
+      
 
 
     } catch (error) {
