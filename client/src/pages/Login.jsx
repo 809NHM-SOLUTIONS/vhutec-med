@@ -91,7 +91,7 @@ function Login() {
       case "ADMIN":
           navigate("/admin/dashboard");
           break;
-          
+
   default:
     setError("User role is not recognised.");
 }
@@ -211,7 +211,7 @@ function Login() {
 
           <div className="auth-footer">
             <span>Don't have an account?</span>
-code client/src/pages/Login.jsx
+
 
             <Link to="/signup">
               Sign Up
