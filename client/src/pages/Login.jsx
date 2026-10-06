@@ -134,9 +134,7 @@ function Login() {
             <h1>Login to Vhutec Med</h1>
 
             <p>
-              Access your appointments, queue information and healthcarecode client/src/pages/Login.jsx
-
-              services.
+              Access your appointments, queue information and healthcare services.
             </p>
           </div>
 
