@@ -87,9 +87,15 @@ function Login() {
     navigate("/receptionist");
     break;
 
+
   default:
     setError("User role is not recognised.");
 }
+
+        case "ADMIN":
+          navigate("/admin/dashboard");
+          break;
+
 
     } catch (error) {
       console.error("Login error:", error);
@@ -150,7 +156,7 @@ function Login() {
               <label htmlFor="email">Email address</label>
 
               <div className="input-wrapper">
-                <FiMail />
+                {/* //<FiMail /> */}
 
                 <input
                   id="email"
@@ -167,7 +173,7 @@ function Login() {
               <label htmlFor="password">Password</label>
 
               <div className="input-wrapper">
-                <FiLock />
+                {/* <FiLock /> */}
 
                 <input
                   id="password"
