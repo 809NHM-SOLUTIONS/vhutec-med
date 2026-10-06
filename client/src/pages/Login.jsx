@@ -114,7 +114,7 @@ function Login() {
           break;
 
         case "ADMIN":
-          navigate("/admin");
+          navigate("/admin/dashboard");
           break;
 
         default:
@@ -189,7 +189,7 @@ function Login() {
               </label>
 
               <div className="input-wrapper">
-                <FiMail />
+                {/* //<FiMail /> */}
 
                 <input
                   id="email"
@@ -208,7 +208,7 @@ function Login() {
               </label>
 
               <div className="input-wrapper">
-                <FiLock />
+                {/* <FiLock /> */}
 
                 <input
                   id="password"

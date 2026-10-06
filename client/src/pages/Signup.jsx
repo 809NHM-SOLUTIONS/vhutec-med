@@ -184,7 +184,7 @@ const handleSubmit = async (event) => {
                 <label htmlFor="firstName">First name</label>
 
                 <div className="input-wrapper">
-                  <FiUser />
+                  {/* <FiUser /> */}
 
                   <input
                     id="firstName"
@@ -201,7 +201,7 @@ const handleSubmit = async (event) => {
                 <label htmlFor="lastName">Last name</label>
 
                 <div className="input-wrapper">
-                  <FiUser />
+                  {/* <FiUser /> */}
 
                   <input
                     id="lastName"
@@ -220,7 +220,7 @@ const handleSubmit = async (event) => {
               <label htmlFor="email">Email address</label>
 
               <div className="input-wrapper">
-                <FiMail />
+                {/* <FiMail /> */}
 
                 <input
                   id="email"
@@ -237,7 +237,7 @@ const handleSubmit = async (event) => {
               <label htmlFor="phone">Phone number</label>
 
               <div className="input-wrapper">
-                <FiPhone />
+                {/* <FiPhone /> */}
 
                 <input
                   id="phone"
@@ -256,7 +256,7 @@ const handleSubmit = async (event) => {
                 <label htmlFor="dob">Date of birth</label>
 
                 <div className="input-wrapper">
-                  <FiCalendar />
+                  {/* <FiCalendar /> */}
 
                   <input
                     id="dob"
@@ -272,7 +272,7 @@ const handleSubmit = async (event) => {
                 <label htmlFor="address">Address</label>
 
                 <div className="input-wrapper">
-                  <FiMapPin />
+                  {/* <FiMapPin /> */}
 
                   <input
                     id="address"
@@ -291,7 +291,7 @@ const handleSubmit = async (event) => {
               <label htmlFor="password">Password</label>
 
               <div className="input-wrapper">
-                <FiLock />
+                {/* <FiLock /> */}
 
                 <input
                   id="password"
@@ -310,7 +310,7 @@ const handleSubmit = async (event) => {
               </label>
 
               <div className="input-wrapper">
-                <FiLock />
+                {/* <FiLock /> */}
 
                 <input
                   id="confirmPassword"

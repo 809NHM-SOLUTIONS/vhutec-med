@@ -11,18 +11,21 @@ import {
 } from "react-icons/fi";
 
 import { useState } from "react";
-import { Link, Routes, Route } from "react-router-dom";
+import { Link, Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ContactUs from "./pages/ContactUs";
 
-import {  FiMail,FiFacebook, FiTwitter, FiInstagram, FiLinkedin } from "react-icons/fi";
+import {  FiFacebook, FiTwitter, FiInstagram, FiLinkedin } from "react-icons/fi";
 import PatientDashboard from "./features/patient/PatientDashboard";
+import PatientDashboard from "./pages/PatientDashboard";
 
 import "./App.css";
 
 import AdminDashboard from "./pages/AdminDashboard";
+import ReceptionistDashboard from "./pages/ReceptionistDashboard";
+import DoctorDashboard from "./pages/DoctorDashboard";
 
 function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -521,6 +524,30 @@ function LandingPage() {
   );
 }
 
+const RoleProtectedRoute = ({ allowedRole, children }) => {
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role !== allowedRole) {
+    switch (user.role) {
+      case "PATIENT":
+        return <Navigate to="/patient" replace />;
+      case "DOCTOR":
+        return <Navigate to="/doctor" replace />;
+      case "RECEPTIONIST":
+        return <Navigate to="/receptionist" replace />;
+      case "ADMIN":
+        return <Navigate to="/admin/dashboard" replace />;
+      default:
+        return <Navigate to="/login" replace />;
+    }
+  }
+
+  return children;
+};
 function App() {
   return (
     <Routes>
@@ -529,10 +556,48 @@ function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/contact" element={<ContactUs />} />
 
-      <Route path="/admin/dashboard" element={<AdminDashboard />} />
-      <Route path="/patient" element={<PatientDashboard />} />
+      <Route
+  path="/admin/dashboard"
+  element={
+    <RoleProtectedRoute allowedRole="ADMIN">
+      <AdminDashboard />
+    </RoleProtectedRoute>
+  }
+/>
+      <Route
+  path="/receptionist"
+  element={
+    <RoleProtectedRoute allowedRole="RECEPTIONIST">
+      <ReceptionistDashboard />
+    </RoleProtectedRoute>
+  }
+/>
+<Route
+  path="/doctor"
+  element={
+    <RoleProtectedRoute allowedRole="DOCTOR">
+      <DoctorDashboard />
+    </RoleProtectedRoute>
+  }
+/>
+      <Route
+  path="/patient"
+  element={
+    <RoleProtectedRoute allowedRole="PATIENT">
+      <PatientDashboard />
+    </RoleProtectedRoute>
+  }
+/>
     </Routes>
   );
 }
 
 export default App;
+
+
+
+
+
+
+
+
