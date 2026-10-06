@@ -18,8 +18,7 @@ import Signup from "./pages/Signup";
 import ContactUs from "./pages/ContactUs";
 
 import {  FiFacebook, FiTwitter, FiInstagram, FiLinkedin } from "react-icons/fi";
-import PatientDashboard from "./features/patient/PatientDashboard";
-import PatientDashboard from "./pages/PatientDashboard";
+import PatientDashboard from "./pages/patient/PatientDashboard";
 
 import "./App.css";
 
