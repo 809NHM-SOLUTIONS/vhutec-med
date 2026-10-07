@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { FiArrowLeft, FiLock, FiMail } from "react-icons/fi";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
+import { FiArrowLeft } from "react-icons/fi";
 import "./Auth.css";
 
 function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -15,7 +21,6 @@ function Login() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  
 
   // Display message received from Signup
   useEffect(() => {
@@ -26,6 +31,20 @@ function Login() {
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
+
+  // Pre-fill email/password if supplied through URL parameters
+  useEffect(() => {
+    const email = searchParams.get("email");
+    const password = searchParams.get("password");
+
+    if (email || password) {
+      setFormData((previousData) => ({
+        ...previousData,
+        email: email || previousData.email,
+        password: password || previousData.password,
+      }));
+    }
+  }, [searchParams]);
 
   const handleChange = (event) => {
     const { id, value } = event.target;
@@ -71,34 +90,25 @@ function Login() {
 
       // Navigate based on user role
       switch (data.user.role) {
-         case "ADMIN":
-    navigate("/admin/dashboard");
-    break;
-    
-  case "PATIENT":
-    navigate("/patient");
-    break;
-
-  case "DOCTOR":
-    navigate("/doctor");
-    break;
-
-  case "RECEPTIONIST":
-    navigate("/receptionist");
-    break;
-
-
-      case "ADMIN":
+        case "ADMIN":
           navigate("/admin/dashboard");
           break;
 
-  default:
-    setError("User role is not recognised.");
-}
+        case "PATIENT":
+          navigate("/patient");
+          break;
 
-      
+        case "DOCTOR":
+          navigate("/doctor");
+          break;
 
+        case "RECEPTIONIST":
+          navigate("/receptionist");
+          break;
 
+        default:
+          setError("User role is not recognised.");
+      }
     } catch (error) {
       console.error("Login error:", error);
 
@@ -134,7 +144,8 @@ function Login() {
             <h1>Login to Vhutec Med</h1>
 
             <p>
-              Access your appointments, queue information and healthcare services.
+              Access your appointments, queue information and
+              healthcare services.
             </p>
           </div>
 
@@ -156,8 +167,6 @@ function Login() {
               <label htmlFor="email">Email address</label>
 
               <div className="input-wrapper">
-                {/* //<FiMail /> */}
-
                 <input
                   id="email"
                   type="email"
@@ -173,8 +182,6 @@ function Login() {
               <label htmlFor="password">Password</label>
 
               <div className="input-wrapper">
-                {/* <FiLock /> */}
-
                 <input
                   id="password"
                   type="password"
@@ -209,7 +216,6 @@ function Login() {
 
           <div className="auth-footer">
             <span>Don't have an account?</span>
-
 
             <Link to="/signup">
               Sign Up

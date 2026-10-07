@@ -1,5 +1,7 @@
 require("dotenv").config();
 
+console.log(">>> Vhutec Med app.js is running <<<");
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -9,6 +11,7 @@ const prisma = require("./prisma");
 const initializeDefaultAdmin = require("./data/initializer");
 
 const authRoutes = require("./routes/auth.routes");
+const adminStaffRoutes = require("./routes/adminStaffRoutes");
 
 const userRoutes = require("./routes/userRoutes");
 const patientRoutes = require("./routes/patientRoutes");
@@ -18,6 +21,7 @@ const doctorDepartmentRoutes = require("./routes/doctorDepartmentRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
 const queueRoutes = require("./routes/queueRoutes");
 const consultationRoutes = require("./routes/consultationRoutes");
+const receptionistRoutes = require("./routes/receptionistRoutes");
 
 const app = express();
 
@@ -26,6 +30,7 @@ app.use(helmet());
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
+app.use("/api/admin/staff", adminStaffRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/doctors", doctorRoutes);
@@ -34,6 +39,9 @@ app.use("/api/doctor-departments", doctorDepartmentRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/queue", queueRoutes);
 app.use("/api/consultations", consultationRoutes);
+app.use("/api/receptionists", receptionistRoutes);
+
+
 
 app.get("/api/health", (req, res) => {
     res.json({
