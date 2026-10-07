@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { FiArrowLeft, FiLock, FiMail } from "react-icons/fi";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams
+} from "react-router-dom";
+import {
+  FiArrowLeft
+} from "react-icons/fi";
 import "./Auth.css";
 
 function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -15,6 +23,7 @@ function Login() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  
 
   // Display message received from Signup
   useEffect(() => {
@@ -25,6 +34,19 @@ function Login() {
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
+
+  useEffect(() => {
+  const email = searchParams.get("email");
+  const password = searchParams.get("password");
+
+  if (email || password) {
+    setFormData((previousData) => ({
+      ...previousData,
+      email: email || previousData.email,
+      password: password || previousData.password,
+    }));
+  }
+}, [searchParams]);
 
   const handleChange = (event) => {
     const { id, value } = event.target;
@@ -189,7 +211,7 @@ function Login() {
               </label>
 
               <div className="input-wrapper">
-                {/* //<FiMail /> */}
+                
 
                 <input
                   id="email"
@@ -203,22 +225,20 @@ function Login() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="password">
+            <label htmlFor="password">
                 Password
-              </label>
+            </label>
 
-              <div className="input-wrapper">
-                {/* <FiLock /> */}
-
+            <div className="input-wrapper">
                 <input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  required
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={formData.password}
+                onChange={handleChange}
+                required
                 />
-              </div>
+            </div>
             </div>
 
             <div className="auth-options">

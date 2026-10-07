@@ -19,8 +19,18 @@ const sendStaffWelcomeEmail = async ({
             ? "Doctor"
             : "Receptionist";
 
-    const loginUrl =
-        process.env.FRONTEND_URL || "http://localhost:5173";
+    // const loginUrl =
+    // `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`;
+
+    const frontendUrl =
+    process.env.FRONTEND_URL || "http://localhost:5173";
+
+const loginUrl =
+    `${frontendUrl}/login?email=${encodeURIComponent(
+        recipientEmail
+    )}&password=${encodeURIComponent(
+        temporaryPassword
+    )}`;
 
     const mailOptions = {
         from: `"Vhutec Med" <${process.env.EMAIL_USER}>`,
