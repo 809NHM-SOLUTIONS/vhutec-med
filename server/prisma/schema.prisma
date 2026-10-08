@@ -34,6 +34,10 @@ model User {
   id           Int      @id @default(autoincrement())
   email        String   @unique
   passwordHash String   @map("password_hash")
+
+  resetPasswordToken     String?   @map("reset_password_token")
+  resetPasswordExpiresAt DateTime? @map("reset_password_expires_at")
+
   role         UserRole
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -46,15 +50,17 @@ model User {
 }
 
 model Patient {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @unique @map("user_id")
-  firstName String   @map("first_name")
-  lastName  String   @map("last_name")
-  dob       DateTime
-  phone     String
-  address   String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            Int      @id @default(autoincrement())
+  userId        Int      @unique @map("user_id")
+  patientNumber String?  @unique @map("patient_number")
+  firstName     String   @map("first_name")
+  lastName      String   @map("last_name")
+  idNumber      String?  @unique @map("id_number")
+  dob           DateTime
+  phone         String
+  address       String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   appointments Appointment[]

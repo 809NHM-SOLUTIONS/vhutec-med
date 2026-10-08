@@ -297,3 +297,66 @@
   cursor: not-allowed;
 }
 }
+
+
+
+.password-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  opacity: 0.75;
+}
+
+.password-requirements {
+  margin-top: -4px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.password-requirements span {
+  font-weight: 600;
+}
+
+.password-requirements ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.password-requirements li {
+  margin-bottom: 3px;
+}
+
+
+.auth-not-registered {
+  margin-bottom: 20px;
+  padding: 18px;
+  border-radius: 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.auth-not-registered-content h3 {
+  margin: 0 0 8px;
+}
+
+.auth-not-registered-content p {
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
+.auth-register-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  margin-top: 16px;
+}

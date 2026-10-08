@@ -6,7 +6,6 @@ import {
   FiMail,
   FiPhone,
   FiUser,
-  FiCalendar,
   FiMapPin,
 } from "react-icons/fi";
 import "./Auth.css";
@@ -19,11 +18,11 @@ function Signup() {
     lastName: "",
     email: "",
     phone: "",
-    dob: "",
+    idNumber: "",
     address: "",
     password: "",
     confirmPassword: "",
-  });
+    });
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -63,9 +62,9 @@ const handleSubmit = async (event) => {
     return;
   }
 
-  if (!formData.dob) {
-    setError("Please select your date of birth.");
-    return;
+  if (!/^\d{13}$/.test(formData.idNumber.trim())) {
+   setError("ID number must be exactly 13 digits.");
+   return;
   }
 
   if (formData.address.trim().length < 5) {
@@ -113,6 +112,13 @@ const handleSubmit = async (event) => {
     );
 
     const data = await response.json();
+
+    console.log("Registration response:", data);
+    console.log(
+  "Validation errors:",
+  JSON.stringify(data.errors, null, 2)
+);
+
 
     if (!response.ok) {
       if (data.errors && data.errors.length > 0) {
@@ -216,77 +222,71 @@ const handleSubmit = async (event) => {
 
             </div>
 
-            <div className="form-group">
-              <label htmlFor="email">Email address</label>
-
-              <div className="input-wrapper">
-                {/* <FiMail /> */}
-
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="phone">Phone number</label>
-
-              <div className="input-wrapper">
-                {/* <FiPhone /> */}
-
-                <input
-                  id="phone"
-                  type="tel"
-                  placeholder="Enter your phone number"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-            </div>
-
             <div className="form-row">
 
-              <div className="form-group">
-                <label htmlFor="dob">Date of birth</label>
+            <div className="form-group">
+                <label htmlFor="idNumber">ID number</label>
 
                 <div className="input-wrapper">
-                  {/* <FiCalendar /> */}
-
-                  <input
-                    id="dob"
-                    type="date"
-                    value={formData.dob}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="address">Address</label>
-
-                <div className="input-wrapper">
-                  {/* <FiMapPin /> */}
-
-                  <input
-                    id="address"
+                <input
+                    id="idNumber"
                     type="text"
-                    placeholder="Enter your address"
-                    value={formData.address}
+                    inputMode="numeric"
+                    maxLength="13"
+                    placeholder="Enter your 13-digit ID number"
+                    value={formData.idNumber}
                     onChange={handleChange}
                     required
-                  />
+                />
                 </div>
-              </div>
+            </div>
+
+            <div className="form-group">
+                <label htmlFor="email">Email address</label>
+
+                <div className="input-wrapper">
+                <input
+                    id="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    required
+                />
+                </div>
+            </div>
 
             </div>
 
+            <div className="form-group">
+            <label htmlFor="phone">Phone number</label>
+
+            <div className="input-wrapper">
+                <input
+                id="phone"
+                type="tel"
+                placeholder="Enter your phone number"
+                value={formData.phone}
+                onChange={handleChange}
+                required
+                />
+            </div>
+            </div>
+
+            <div className="form-group">
+            <label htmlFor="address">Address</label>
+
+            <div className="input-wrapper">
+                <input
+                id="address"
+                type="text"
+                placeholder="Enter your address"
+                value={formData.address}
+                onChange={handleChange}
+                required
+                />
+            </div>
+            </div>
             <div className="form-group">
               <label htmlFor="password">Password</label>
 

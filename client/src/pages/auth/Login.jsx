@@ -199,9 +199,9 @@ function Login() {
                 <span>Remember me</span>
               </label>
 
-              <a href="#forgot-password">
+              <Link to="/forgot-password">
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <button

@@ -17,8 +17,11 @@ import {
   FiLinkedin,
 } from "react-icons/fi";
 
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
+import Login from "./pages/auth/Login";
+import Signup from "./pages/auth/Signup";
+import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
+
 import ContactUs from "./pages/contact/ContactUs";
 
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -39,8 +42,8 @@ function LandingPage() {
           <a href="#home" className="brand">
             
             <div className="brand-icon">
-  <img src="\images\logo\logo.jpeg" alt="Vhutec Med Logo" />
-</div>
+              <img src="\images\logo\logo.jpeg" alt="Vhutec Med Logo" />
+            </div>
 
             <div className="brand-text">
               <span>Vhutec</span>
@@ -73,34 +76,36 @@ function LandingPage() {
               Login
             </button> */}
             <div className="mobile-auth-buttons">
-  <Link
-    to="/login"
-    className="nav-login mobile-login"
-    onClick={() => setMenuOpen(false)}
-  >
-    Login
-  </Link>
+            <Link
+              to="/login"
+              className="nav-login mobile-login"
+              onClick={() => setMenuOpen(false)}
+            >
+              Login
+            </Link>
+            
+            
 
-  <Link
-    to="/signup"
-    className="nav-signup mobile-signup"
-    onClick={() => setMenuOpen(false)}
-  >
-    Sign Up
-  </Link>
-</div>
-          </nav>
+            <Link
+              to="/signup"
+              className="nav-signup mobile-signup"
+              onClick={() => setMenuOpen(false)}
+            >
+              Sign Up
+            </Link>
+          </div>
+                    </nav>
 
-          <div className="nav-actions">
-            <div className="desktop-auth-buttons">
-  <Link to="\login" className="nav-login desktop-login">
-    Login
-  </Link>
+                    <div className="nav-actions">
+                      <div className="desktop-auth-buttons">
+            <Link to="/login" className="nav-login desktop-login">
+              Login
+            </Link>
 
-  <Link to="/signup" className="nav-signup">
-    Sign Up
-  </Link>
-</div>
+            <Link to="/signup" className="nav-signup">
+              Sign Up
+            </Link>
+          </div>
 
             <button
               className="menu-button"
@@ -555,6 +560,11 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route
+        path="/reset-password"
+        element={<ResetPassword />}
+      />
       <Route path="/contact" element={<ContactUs />} />
 
       <Route
