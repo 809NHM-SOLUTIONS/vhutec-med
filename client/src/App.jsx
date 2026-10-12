@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, Routes, Route, Navigate } from "react-router-dom";
-
+import VerifyEmail from "./pages/VerifyEmail";
 import {
   FiArrowRight,
   FiCalendar,
@@ -566,6 +566,7 @@ function App() {
         element={<ResetPassword />}
       />
       <Route path="/contact" element={<ContactUs />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
 
       <Route
   path="/admin/dashboard"

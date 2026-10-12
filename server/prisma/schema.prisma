@@ -30,21 +30,28 @@ enum QueueStatus {
   COMPLETED
 }
 
+
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
+  id                        Int       @id @default(autoincrement())
+  email                     String    @unique
+  passwordHash              String    @map("password_hash")
 
-  resetPasswordToken     String?   @map("reset_password_token")
-  resetPasswordExpiresAt DateTime? @map("reset_password_expires_at")
+  // Password reset
+  resetPasswordToken        String?   @map("reset_password_token")
+  resetPasswordExpiresAt    DateTime? @map("reset_password_expires_at")
 
-  role         UserRole
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  // Patient email verification
+  emailVerified             Boolean   @default(false) @map("email_verified")
+  emailVerificationToken    String?   @unique @map("email_verification_token")
+  emailVerificationExpiresAt DateTime? @map("email_verification_expires_at")
 
-  patient      Patient?
-  doctor       Doctor?
-  receptionist Receptionist?
+  role                      UserRole
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+
+  patient                   Patient?
+  doctor                    Doctor?
+  receptionist              Receptionist?
 
   @@map("users")
 }
