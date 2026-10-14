@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 
+
 const authenticate = (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -9,6 +10,8 @@ const authenticate = (req, res, next) => {
                 success: false,
                 message: "Authentication required"
             });
+
+         console.log("[AUTH] Request received:", req.method, req.originalUrl);
         }
 
         const token = authHeader.split(" ")[1];
@@ -28,6 +31,10 @@ const authenticate = (req, res, next) => {
         );
 
         req.user = decoded;
+
+
+        console.log("[AUTH] Token verified; continuing.");
+        console.log("[AUTH] Authentication rejected.");
 
         next();
 

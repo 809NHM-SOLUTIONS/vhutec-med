@@ -20,8 +20,12 @@ import "./AdminDashboard.css";
 
 const AdminDashboard = () => {
 
-  
+
   const [activeSection, setActiveSection] = useState("Dashboard");
+
+const [dashboardStats, setDashboardStats] = useState(null);
+const [dashboardLoading, setDashboardLoading] = useState(true);
+const [dashboardError, setDashboardError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [showDoctorForm, setShowDoctorForm] = useState(false);
@@ -31,8 +35,36 @@ const AdminDashboard = () => {
 const [doctors, setDoctors] = useState([]);
 const [doctorsLoading, setDoctorsLoading] = useState(true);
 
+const [selectedDoctor, setSelectedDoctor] = useState(null);
+const [showDoctorDetails, setShowDoctorDetails] = useState(false);
+const [doctorModalMode, setDoctorModalMode] = useState("view");
+const [doctorActionLoading, setDoctorActionLoading] = useState(false);
+const [doctorMessage, setDoctorMessage] = useState(null);
+
+const [editDoctorForm, setEditDoctorForm] = useState({
+  firstName: "",
+  lastName: "",
+  phone: "",
+  speciality: "",
+  licenseNo: "",
+});
+
 const [receptionists, setReceptionists] = useState([]);
 const [receptionistsLoading, setReceptionistsLoading] = useState(true);
+const [selectedReceptionist, setSelectedReceptionist] = useState(null);
+const [showReceptionistDetails, setShowReceptionistDetails] = useState(false);
+const [receptionistModalMode, setReceptionistModalMode] = useState("view");
+const [receptionistActionLoading, setReceptionistActionLoading] = useState(false);
+const [receptionistMessage, setReceptionistMessage] = useState(null);
+const [registeredUsers, setRegisteredUsers] = useState([]);
+const [usersLoading, setUsersLoading] = useState(true);
+const [usersError, setUsersError] = useState("");
+
+const [editReceptionistForm, setEditReceptionistForm] = useState({
+  firstName: "",
+  lastName: "",
+  phone: "",
+});
 
   const [doctorForm, setDoctorForm] = useState({
     firstName: "",
@@ -66,36 +98,24 @@ const [receptionistsLoading, setReceptionistsLoading] = useState(true);
     { label: "Settings", icon: FiSettings }
   ];
 
-  const recentAppointments = [
-    {
-      patient: "Thabo Mokoena",
-      doctor: "Dr. Naledi Maseko",
-      time: "09:30",
-      department: "General Medicine",
-      status: "Confirmed"
-    },
-    {
-      patient: "Lerato Dlamini",
-      doctor: "Dr. Kabelo Dlamini",
-      time: "10:30",
-      department: "Dental Care",
-      status: "Pending"
-    },
-    {
-      patient: "Mpho Nkosi",
-      doctor: "Dr. Lerato Nkosi",
-      time: "11:00",
-      department: "Dermatology",
-      status: "Checked In"
-    },
-    {
-      patient: "Karabo Molefe",
-      doctor: "Dr. Naledi Maseko",
-      time: "13:30",
-      department: "General Medicine",
-      status: "Cancelled"
-    }
-  ];
+  const [patients, setPatients] = useState([]);
+const [patientsLoading, setPatientsLoading] = useState(true);
+const [patientsError, setPatientsError] = useState("");
+const [selectedPatient, setSelectedPatient] = useState(null);
+const [showPatientForm, setShowPatientForm] = useState(false);
+const [patientForm, setPatientForm] = useState({
+    firstName: "",
+    lastName: "",
+    dob: "",
+    phone: "",
+    address: "",
+});
+const [patientSaving, setPatientSaving] = useState(false);
+const [patientMessage, setPatientMessage] = useState(null);
+const [patientModalMode, setPatientModalMode] = useState("view");
+
+
+const recentAppointments = dashboardStats?.recentAppointments || [];
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -226,6 +246,7 @@ const [receptionistsLoading, setReceptionistsLoading] = useState(true);
 });
 
 await loadReceptionists();
+await loadUsers();
 
     } catch (error) {
       console.error("Create receptionist error:", error);
@@ -241,8 +262,11 @@ await loadReceptionists();
     } finally {
       setStaffLoading(false);
     }
+
   };
-  
+
+
+
 
     useEffect(() => {
     const loadDepartments = async () => {
@@ -274,6 +298,36 @@ await loadReceptionists();
   }, []);
 
 
+
+const loadDashboardStats = async () => {
+  setDashboardLoading(true);
+  setDashboardError("");
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.get(
+      "http://localhost:5000/api/admin/dashboard/stats",
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+
+    setDashboardStats(response.data?.data || null);
+  } catch (error) {
+    console.error("Failed to load dashboard statistics:", error);
+
+    setDashboardError(
+      error.response?.data?.message ||
+      "Unable to load dashboard statistics."
+    );
+  } finally {
+    setDashboardLoading(false);
+  }
+};
+
   const loadDoctors = async () => {
   try {
     const token = localStorage.getItem("token");
@@ -299,6 +353,37 @@ await loadReceptionists();
     );
   } finally {
     setDoctorsLoading(false);
+  }
+};
+
+
+const loadUsers = async () => {
+  setUsersLoading(true);
+  setUsersError("");
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await fetch("http://localhost:5000/api/admin/staff", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || "Failed to load registered users.");
+    }
+
+    setRegisteredUsers(result.data || []);
+  } catch (error) {
+    console.error("Load registered users error:", error);
+    setUsersError(error.message || "Unable to load registered users.");
+  } finally {
+    setUsersLoading(false);
   }
 };
 
@@ -330,6 +415,40 @@ const loadReceptionists = async () => {
   }
 };
 
+const loadPatients = async () => {
+  setPatientsLoading(true);
+  setPatientsError("");
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.get(
+      "http://localhost:5000/api/patients",
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setPatients(response.data.data || []);
+  } catch (error) {
+    console.error("Failed to load patients:", error);
+
+    setPatientsError(
+      error.response?.data?.message ||
+        "Failed to load patients. Please try again."
+    );
+  } finally {
+    setPatientsLoading(false);
+  }
+};
+
+
+
+useEffect(() => {
+  loadDashboardStats();
+}, []);
 
   useEffect(() => {
     loadDoctors();
@@ -337,6 +456,14 @@ const loadReceptionists = async () => {
 
 useEffect(() => {
   loadReceptionists();
+}, []);
+
+useEffect(() => {
+  loadPatients();
+}, []);
+
+useEffect(() => {
+  loadUsers();
 }, []);
 
   const renderDashboard = () => (
@@ -348,51 +475,90 @@ useEffect(() => {
         </div>
       </div>
 
-      <section className="admin-stats-grid">
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon">
-            <FiUsers />
-          </div>
-          <div>
-            <span>Total Users</span>
-            <strong>248</strong>
-            <small>+12 this month</small>
-          </div>
-        </div>
 
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon">
-            <FiCalendar />
-          </div>
-          <div>
-            <span>Appointments</span>
-            <strong>86</strong>
-            <small>+8 this week</small>
-          </div>
-        </div>
+<section className="admin-stats-grid">
+  <div className="admin-stat-card">
+    <div className="admin-stat-icon">
+      <FiUsers />
+    </div>
+    <div>
+      <span>Total Users</span>
+      <strong>
+        {dashboardLoading ? "..." : dashboardStats?.users ?? 0}
+      </strong>
+      <small>Registered patient, doctor and receptionist profiles</small>
+    </div>
+  </div>
 
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon">
-            <FiUserCheck />
-          </div>
-          <div>
-            <span>Patients</span>
-            <strong>192</strong>
-            <small>+7 this month</small>
-          </div>
-        </div>
+  <div className="admin-stat-card">
+    <div className="admin-stat-icon">
+      <FiCalendar />
+    </div>
+    <div>
+      <span>Appointments</span>
+      <strong>
+        {dashboardLoading ? "..." : dashboardStats?.appointments ?? 0}
+      </strong>
+      <small>
+        {dashboardStats?.appointmentStatuses?.PENDING ?? 0} pending
+      </small>
+    </div>
+  </div>
 
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon">
-            <FiActivity />
-          </div>
-          <div>
-            <span>Doctors</span>
-            <strong>24</strong>
-            <small>20 active today</small>
-          </div>
-        </div>
-      </section>
+  <div className="admin-stat-card">
+    <div className="admin-stat-icon">
+      <FiUserCheck />
+    </div>
+    <div>
+      <span>Patients</span>
+      <strong>
+        {dashboardLoading ? "..." : dashboardStats?.patients ?? 0}
+      </strong>
+      <small>Registered patients</small>
+    </div>
+  </div>
+
+  <div className="admin-stat-card">
+    <div className="admin-stat-icon">
+      <FiActivity />
+    </div>
+    <div>
+      <span>Doctors</span>
+      <strong>
+        {dashboardLoading ? "..." : dashboardStats?.doctors ?? 0}
+      </strong>
+      <small>Registered medical staff</small>
+    </div>
+  </div>
+
+  <div className="admin-stat-card">
+    <div className="admin-stat-icon">
+      <FiUsers />
+    </div>
+    <div>
+      <span>Receptionists</span>
+      <strong>
+        {dashboardLoading ? "..." : dashboardStats?.receptionists ?? 0}
+      </strong>
+      <small>Registered receptionists</small>
+    </div>
+  </div>
+
+  <div className="admin-stat-card">
+    <div className="admin-stat-icon">
+      <FiClipboard />
+    </div>
+    <div>
+      <span>Queue Records</span>
+      <strong>
+        {dashboardLoading ? "..." : dashboardStats?.queues ?? 0}
+      </strong>
+      <small>
+        {dashboardStats?.queueStatuses?.WAITING ?? 0} waiting
+      </small>
+    </div>
+  </div>
+</section>
 
       <div className="admin-dashboard-grid">
         <section className="admin-card">
@@ -415,24 +581,51 @@ useEffect(() => {
                 </tr>
               </thead>
 
-              <tbody>
-                {recentAppointments.map((appointment) => (
-                  <tr key={`${appointment.patient}-${appointment.time}`}>
-                    <td>{appointment.patient}</td>
-                    <td>{appointment.doctor}</td>
-                    <td>{appointment.time}</td>
-                    <td>
-                      <span
-                        className={`admin-status ${appointment.status
-                          .toLowerCase()
-                          .replace(" ", "-")}`}
-                      >
-                        {appointment.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+
+<tbody>
+  {dashboardLoading ? (
+    <tr>
+      <td colSpan="4">Loading appointments...</td>
+    </tr>
+  ) : dashboardError ? (
+    <tr>
+      <td colSpan="4">{dashboardError}</td>
+    </tr>
+  ) : recentAppointments.length === 0 ? (
+    <tr>
+      <td colSpan="4">No appointments found.</td>
+    </tr>
+  ) : (
+    recentAppointments.map((appointment) => (
+      <tr key={appointment.id}>
+        <td>
+          {appointment.patient?.firstName || ""}{" "}
+          {appointment.patient?.lastName || "Unknown patient"}
+        </td>
+
+        <td>
+          Dr. {appointment.doctor?.firstName || ""}{" "}
+          {appointment.doctor?.lastName || "Unknown doctor"}
+        </td>
+
+        <td>
+          {appointment.timeSlot || "Not specified"}
+        </td>
+
+        <td>
+          <span
+            className={`admin-status ${String(appointment.status || "")
+              .toLowerCase()
+              .replace(/_/g, "-")}`}
+          >
+            {String(appointment.status || "Unknown")
+              .replace(/_/g, " ")}
+          </span>
+        </td>
+      </tr>
+    ))
+  )}
+</tbody>
             </table>
           </div>
         </section>
@@ -673,56 +866,174 @@ useEffect(() => {
               </tr>
             </thead>
 
-            <tbody>
-              <tr>
-                <td>Thabo Mokoena</td>
-                <td>thabo.mokoena@example.com</td>
-                <td>Patient</td>
-                <td>
-                  <span className="admin-status active">
-                    Active
-                  </span>
-                </td>
-              </tr>
 
-              <tr>
-                <td>Dr. Naledi Maseko</td>
-                <td>naledi.maseko@vhutecmed.co.za</td>
-                <td>Doctor</td>
-                <td>
-                  <span className="admin-status active">
-                    Active
-                  </span>
-                </td>
-              </tr>
+<tbody>
+  {usersLoading ? (
+    <tr>
+      <td colSpan="4" className="admin-empty-state">
+        Loading registered users...
+      </td>
+    </tr>
+  ) : usersError ? (
+    <tr>
+      <td colSpan="4" className="admin-empty-state">
+        <p>{usersError}</p>
+        <button
+          type="button"
+          className="admin-secondary-button"
+          onClick={loadUsers}
+        >
+          Retry
+        </button>
+      </td>
+    </tr>
+  ) : registeredUsers.length === 0 ? (
+    <tr>
+      <td colSpan="4" className="admin-empty-state">
+        No registered users found.
+      </td>
+    </tr>
+  ) : (
+    registeredUsers.map((user) => (
+      <tr key={user.id}>
+        <td>
+          <div className="admin-user-cell">
+            <strong>{user.fullName || "Name unavailable"}</strong>
+            <small>ID: {user.id}</small>
+          </div>
+        </td>
 
-              <tr>
-                <td>Lerato Dlamini</td>
-                <td>lerato.dlamini@example.com</td>
-                <td>Patient</td>
-                <td>
-                  <span className="admin-status active">
-                    Active
-                  </span>
-                </td>
-              </tr>
+        <td>{user.email}</td>
 
-              <tr>
-                <td>Sipho Nkosi</td>
-                <td>sipho.nkosi@vhutecmed.co.za</td>
-                <td>Receptionist</td>
-                <td>
-                  <span className="admin-status inactive">
-                    Inactive
-                  </span>
-                </td>
-              </tr>
-            </tbody>
+        <td>
+          <span className="admin-role-badge">
+            {user.role}
+          </span>
+        </td>
+
+        <td>
+          <span className="admin-status active">
+            Registered
+          </span>
+        </td>
+      </tr>
+    ))
+  )}
+</tbody>
           </table>
         </div>
       </section>
     </>
   );
+
+  const handleViewDoctor = (doctor) => {
+  setSelectedDoctor(doctor);
+  setDoctorModalMode("view");
+  setDoctorMessage(null);
+  setShowDoctorDetails(true);
+};
+
+const handleEditDoctor = (doctor) => {
+  setSelectedDoctor(doctor);
+
+  setEditDoctorForm({
+    firstName: doctor.firstName || "",
+    lastName: doctor.lastName || "",
+    phone: doctor.phone || "",
+    speciality: doctor.speciality || "",
+    licenseNo: doctor.licenseNo || "",
+  });
+
+  setDoctorModalMode("edit");
+  setDoctorMessage(null);
+  setShowDoctorDetails(true);
+};
+
+const handleUpdateDoctor = async (event) => {
+  event.preventDefault();
+
+  if (!selectedDoctor) return;
+
+  setDoctorActionLoading(true);
+  setDoctorMessage(null);
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.put(
+      `http://localhost:5000/api/doctors/${selectedDoctor.id}`,
+      editDoctorForm,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setDoctorMessage({
+      type: "success",
+      text: response.data.message || "Doctor updated successfully.",
+    });
+
+    await loadDoctors();
+
+    setShowDoctorDetails(false);
+    setSelectedDoctor(null);
+  } catch (error) {
+    console.error("Update doctor error:", error);
+
+    setDoctorMessage({
+      type: "error",
+      text:
+        error.response?.data?.message ||
+        "Failed to update doctor. Please try again.",
+    });
+  } finally {
+    setDoctorActionLoading(false);
+  }
+};
+
+const handleDeleteDoctor = async (doctor) => {
+  const confirmed = window.confirm(
+    `Are you sure you want to delete Dr. ${doctor.firstName} ${doctor.lastName}?`
+  );
+
+  if (!confirmed) return;
+
+  setDoctorActionLoading(true);
+  setDoctorMessage(null);
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.delete(
+      `http://localhost:5000/api/doctors/${doctor.id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setDoctorMessage({
+      type: "success",
+      text: response.data.message || "Doctor deleted successfully.",
+    });
+
+    await loadDoctors();
+  } catch (error) {
+    console.error("Delete doctor error:", error);
+
+    setDoctorMessage({
+      type: "error",
+      text:
+        error.response?.data?.message ||
+        "Failed to delete doctor. Check whether linked records prevent deletion.",
+    });
+  } finally {
+    setDoctorActionLoading(false);
+  }
+};
 
    const renderDoctors = () => (
     <>
@@ -961,6 +1272,34 @@ useEffect(() => {
                 <td>
                     {doctor.user?.email || "No email"}
                 </td>
+                <td>
+  <div className="admin-action-group">
+    <button
+      type="button"
+      className="admin-action-button"
+      onClick={() => handleViewDoctor(doctor)}
+    >
+      View
+    </button>
+
+    <button
+      type="button"
+      className="admin-action-button"
+      onClick={() => handleEditDoctor(doctor)}
+    >
+      Edit
+    </button>
+
+    <button
+      type="button"
+      className="admin-action-button danger"
+      onClick={() => handleDeleteDoctor(doctor)}
+      disabled={doctorActionLoading}
+    >
+      Delete
+    </button>
+  </div>
+</td>
             </tr>
         ))
     )}
@@ -968,9 +1307,312 @@ useEffect(() => {
           </table>
         </div>
       </section>
+
+      {doctorMessage && (
+  <div
+    className={`admin-message ${doctorMessage.type}`}
+    role="alert"
+  >
+    {doctorMessage.text}
+  </div>
+)}
+
+{showDoctorDetails && selectedDoctor && (
+  <div className="admin-modal-overlay">
+    <section
+      className="admin-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="doctor-modal-title"
+    >
+      <div className="admin-modal-header">
+        <div>
+          <h3 id="doctor-modal-title">
+            {doctorModalMode === "view"
+              ? "Doctor Details"
+              : "Edit Doctor"}
+          </h3>
+          <p>Manage the selected doctor's profile.</p>
+        </div>
+
+        <button
+          type="button"
+          className="admin-action-button"
+          onClick={() => {
+            setShowDoctorDetails(false);
+            setSelectedDoctor(null);
+          }}
+        >
+          Close
+        </button>
+      </div>
+
+      {doctorModalMode === "view" ? (
+        <div className="admin-patient-details">
+          <p>
+            <strong>Doctor ID:</strong> {selectedDoctor.id}
+          </p>
+
+          <p>
+            <strong>Name:</strong> Dr. {selectedDoctor.firstName}{" "}
+            {selectedDoctor.lastName}
+          </p>
+
+          <p>
+            <strong>Email:</strong>{" "}
+            {selectedDoctor.user?.email || "Not available"}
+          </p>
+
+          <p>
+            <strong>Phone:</strong>{" "}
+            {selectedDoctor.phone || "Not provided"}
+          </p>
+
+          <p>
+            <strong>Speciality:</strong>{" "}
+            {selectedDoctor.speciality || "Not specified"}
+          </p>
+
+          <p>
+            <strong>Licence Number:</strong>{" "}
+            {selectedDoctor.licenseNo || "Not provided"}
+          </p>
+
+          <p>
+            <strong>Departments:</strong>{" "}
+            {selectedDoctor.departments?.length
+              ? selectedDoctor.departments
+                  .map((item) => item.department?.name)
+                  .filter(Boolean)
+                  .join(", ")
+              : "No departments assigned"}
+          </p>
+
+          <button
+            type="button"
+            className="admin-action-button"
+            onClick={() => handleEditDoctor(selectedDoctor)}
+          >
+            Edit Doctor
+          </button>
+        </div>
+      ) : (
+        <form
+          className="admin-patient-form"
+          onSubmit={handleUpdateDoctor}
+        >
+          <label>
+            First Name
+            <input
+              type="text"
+              value={editDoctorForm.firstName}
+              onChange={(event) =>
+                setEditDoctorForm({
+                  ...editDoctorForm,
+                  firstName: event.target.value,
+                })
+              }
+              required
+            />
+          </label>
+
+          <label>
+            Last Name
+            <input
+              type="text"
+              value={editDoctorForm.lastName}
+              onChange={(event) =>
+                setEditDoctorForm({
+                  ...editDoctorForm,
+                  lastName: event.target.value,
+                })
+              }
+              required
+            />
+          </label>
+
+          <label>
+            Phone Number
+            <input
+              type="tel"
+              value={editDoctorForm.phone}
+              onChange={(event) =>
+                setEditDoctorForm({
+                  ...editDoctorForm,
+                  phone: event.target.value,
+                })
+              }
+              required
+            />
+          </label>
+
+          <label>
+            Speciality
+            <input
+              type="text"
+              value={editDoctorForm.speciality}
+              onChange={(event) =>
+                setEditDoctorForm({
+                  ...editDoctorForm,
+                  speciality: event.target.value,
+                })
+              }
+              required
+            />
+          </label>
+
+          <label>
+            Licence Number
+            <input
+              type="text"
+              value={editDoctorForm.licenseNo}
+              onChange={(event) =>
+                setEditDoctorForm({
+                  ...editDoctorForm,
+                  licenseNo: event.target.value,
+                })
+              }
+              required
+            />
+          </label>
+
+          <div className="admin-modal-actions">
+            <button
+              type="button"
+              className="admin-action-button"
+              disabled={doctorActionLoading}
+              onClick={() => {
+                setShowDoctorDetails(false);
+                setSelectedDoctor(null);
+              }}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              className="admin-action-button"
+              disabled={doctorActionLoading}
+            >
+              {doctorActionLoading ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  </div>
+)}
+
     </>
   );
 
+
+  const handleViewReceptionist = (receptionist) => {
+  setSelectedReceptionist(receptionist);
+  setReceptionistModalMode("view");
+  setReceptionistMessage(null);
+  setShowReceptionistDetails(true);
+};
+
+const handleEditReceptionist = (receptionist) => {
+  setSelectedReceptionist(receptionist);
+
+  setEditReceptionistForm({
+    firstName: receptionist.firstName || "",
+    lastName: receptionist.lastName || "",
+    phone: receptionist.phone || "",
+  });
+
+  setReceptionistModalMode("edit");
+  setReceptionistMessage(null);
+  setShowReceptionistDetails(true);
+};
+
+const handleUpdateReceptionist = async (event) => {
+  event.preventDefault();
+
+  if (!selectedReceptionist) return;
+
+  setReceptionistActionLoading(true);
+  setReceptionistMessage(null);
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.put(
+      `http://localhost:5000/api/receptionists/${selectedReceptionist.id}`,
+      editReceptionistForm,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setReceptionistMessage({
+      type: "success",
+      text: response.data.message || "Receptionist updated successfully.",
+    });
+
+    await loadReceptionists();
+
+    setShowReceptionistDetails(false);
+    setSelectedReceptionist(null);
+  } catch (error) {
+    console.error("Update receptionist error:", error);
+
+    setReceptionistMessage({
+      type: "error",
+      text:
+        error.response?.data?.message ||
+        "Failed to update receptionist. Please try again.",
+    });
+  } finally {
+    setReceptionistActionLoading(false);
+  }
+};
+
+const handleDeleteReceptionist = async (receptionist) => {
+  const confirmed = window.confirm(
+    `Are you sure you want to delete ${receptionist.firstName} ${receptionist.lastName}? This will also delete their associated account.`
+  );
+
+  if (!confirmed) return;
+
+  setReceptionistActionLoading(true);
+  setReceptionistMessage(null);
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.delete(
+      `http://localhost:5000/api/receptionists/${receptionist.id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setReceptionistMessage({
+      type: "success",
+      text: response.data.message || "Receptionist deleted successfully.",
+    });
+
+    await loadReceptionists();
+  } catch (error) {
+    console.error("Delete receptionist error:", error);
+
+    setReceptionistMessage({
+      type: "error",
+      text:
+        error.response?.data?.message ||
+        "Failed to delete receptionist. Please try again.",
+    });
+  } finally {
+    setReceptionistActionLoading(false);
+  }
+};
 
   const renderReceptionists = () => (
   <>
@@ -1135,6 +1777,7 @@ useEffect(() => {
               <th>Email</th>
               <th>Phone</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
@@ -1173,6 +1816,34 @@ useEffect(() => {
                       Registered
                     </span>
                   </td>
+                  <td>
+  <div className="admin-action-group">
+    <button
+      type="button"
+      className="admin-action-button"
+      onClick={() => handleViewReceptionist(receptionist)}
+    >
+      View
+    </button>
+
+    <button
+      type="button"
+      className="admin-action-button"
+      onClick={() => handleEditReceptionist(receptionist)}
+    >
+      Edit
+    </button>
+
+    <button
+      type="button"
+      className="admin-action-button danger"
+      onClick={() => handleDeleteReceptionist(receptionist)}
+      disabled={receptionistActionLoading}
+    >
+      Delete
+    </button>
+  </div>
+</td>
                 </tr>
               ))
             )}
@@ -1180,96 +1851,482 @@ useEffect(() => {
         </table>
       </div>
     </section>
+
   </>
 );
 
-  const renderPatients = () => (
-    <>
-      <div className="admin-section-header">
-        <h2>Patient Management</h2>
-        <p>View registered patients and their recent activity.</p>
-      </div>
+const handleViewPatient = (patient) => {
+  setSelectedPatient(patient);
+  setPatientModalMode("view");
+  setPatientMessage(null);
+  setShowPatientForm(true);
+};
 
-      <section className="admin-card">
-        <div className="admin-card-header">
-          <div>
-            <h3>Patient Directory</h3>
-            <p>Registered patients using Vhutec Med.</p>
-          </div>
-          <span className="admin-card-count">192 Patients</span>
+const handleEditPatient = (patient) => {
+  setSelectedPatient(patient);
+
+  setPatientForm({
+    firstName: patient.firstName || "",
+    lastName: patient.lastName || "",
+    dob: patient.dob
+      ? new Date(patient.dob).toISOString().slice(0, 10)
+      : "",
+    phone: patient.phone || "",
+    address: patient.address || "",
+  });
+
+  setPatientModalMode("edit");
+  setPatientMessage(null);
+  setShowPatientForm(true);
+};
+
+const handleUpdatePatient = async (event) => {
+  event.preventDefault();
+
+  if (!selectedPatient) return;
+
+  setPatientSaving(true);
+  setPatientMessage(null);
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.put(
+      `http://localhost:5000/api/patients/${selectedPatient.id}`,
+      patientForm,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setPatientMessage({
+      type: "success",
+      text: response.data.message || "Patient updated successfully.",
+    });
+
+    await loadPatients();
+
+    setShowPatientForm(false);
+    setSelectedPatient(null);
+  } catch (error) {
+    console.error("Failed to update patient:", error);
+
+    setPatientMessage({
+      type: "error",
+      text:
+        error.response?.data?.message ||
+        "Failed to update patient. Please try again.",
+    });
+  } finally {
+    setPatientSaving(false);
+  }
+};
+
+const handleDeletePatient = async (patient) => {
+  const confirmed = window.confirm(
+    `Are you sure you want to delete ${patient.firstName} ${patient.lastName}?`
+  );
+
+  if (!confirmed) return;
+
+  setPatientMessage(null);
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.delete(
+      `http://localhost:5000/api/patients/${patient.id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setPatientMessage({
+      type: "success",
+      text: response.data.message || "Patient deleted successfully.",
+    });
+
+    await loadPatients();
+  } catch (error) {
+    console.error("Failed to delete patient:", error);
+
+    setPatientMessage({
+      type: "error",
+      text:
+        error.response?.data?.message ||
+        "Failed to delete patient. Please try again.",
+    });
+  }
+};
+
+  const renderPatients = () => (
+  <>
+    <div className="admin-section-header">
+      <h2>Patient Management</h2>
+      <p>View and manage registered patients in Vhutec Med.</p>
+    </div>
+
+    {patientMessage && (
+      <div
+        className={`admin-message ${patientMessage.type}`}
+        role="alert"
+      >
+        {patientMessage.text}
+      </div>
+    )}
+
+    <section className="admin-card">
+      <div className="admin-card-header">
+        <div>
+          <h3>Patient Directory</h3>
+          <p>Patient information retrieved from the database.</p>
         </div>
 
+        <span className="admin-card-count">
+          {patients.length} {patients.length === 1 ? "Patient" : "Patients"}
+        </span>
+      </div>
+
+      {patientsLoading ? (
+        <div className="admin-empty-state">
+          Loading patients...
+        </div>
+      ) : patientsError ? (
+        <div className="admin-empty-state">
+          <p>{patientsError}</p>
+          <button
+            type="button"
+            onClick={loadPatients}
+            className="admin-action-button"
+          >
+            Retry
+          </button>
+        </div>
+      ) : patients.length === 0 ? (
+        <div className="admin-empty-state">
+          No registered patients were found in the database.
+        </div>
+      ) : (
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>
               <tr>
                 <th>Patient</th>
-                <th>File Number</th>
-                <th>Department</th>
-                <th>Last Visit</th>
-                <th>Status</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Date of Birth</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              <tr>
-                <td>Thabo Mokoena</td>
-                <td>VH-2026-00421</td>
-                <td>General Medicine</td>
-                <td>12 Sep 2026</td>
-                <td><span className="admin-status active">Active</span></td>
-              </tr>
+              {patients.map((patient) => (
+                <tr key={patient.id}>
+                  <td>
+                    {patient.firstName} {patient.lastName}
+                  </td>
 
-              <tr>
-                <td>Lerato Dlamini</td>
-                <td>VH-2026-00436</td>
-                <td>Dental Care</td>
-                <td>18 Sep 2026</td>
-                <td><span className="admin-status active">Active</span></td>
-              </tr>
+                  <td>{patient.user?.email || "Not available"}</td>
 
-              <tr>
-                <td>Mpho Nkosi</td>
-                <td>VH-2026-00452</td>
-                <td>Dermatology</td>
-                <td>21 Sep 2026</td>
-                <td><span className="admin-status active">Active</span></td>
-              </tr>
+                  <td>{patient.phone || "Not provided"}</td>
 
-              <tr>
-                <td>Karabo Molefe</td>
-                <td>VH-2026-00467</td>
-                <td>General Medicine</td>
-                <td>25 Sep 2026</td>
-                <td><span className="admin-status pending">Scheduled</span></td>
-              </tr>
+                  <td>
+                    {patient.dob
+                      ? new Date(patient.dob).toLocaleDateString(
+                          "en-ZA",
+                          {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            timeZone: "UTC",
+                          }
+                        )
+                      : "Not provided"}
+                  </td>
+
+                  <td>
+                    <div className="admin-action-group">
+                      <button
+                        type="button"
+                        className="admin-action-button"
+                        onClick={() => handleViewPatient(patient)}
+                      >
+                        View
+                      </button>
+
+                      <button
+                        type="button"
+                        className="admin-action-button"
+                        onClick={() => handleEditPatient(patient)}
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        className="admin-action-button danger"
+                        onClick={() => handleDeletePatient(patient)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-      </section>
-    </>
-  );
+      )}
+    </section>
 
-  const renderAppointments = () => (
+    {showPatientForm && selectedPatient && (
+      <div className="admin-modal-overlay">
+        <section
+          className="admin-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="patient-modal-title"
+        >
+          <div className="admin-modal-header">
+            <div>
+              <h3 id="patient-modal-title">
+                {patientModalMode === "view"
+                  ? "Patient Details"
+                  : "Edit Patient"}
+              </h3>
+
+              <p>
+                {patientModalMode === "view"
+                  ? "Review the registered patient information."
+                  : "Update the patient's information below."}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="admin-action-button"
+              onClick={() => {
+                setShowPatientForm(false);
+                setSelectedPatient(null);
+              }}
+            >
+              Close
+            </button>
+          </div>
+
+          {patientModalMode === "view" ? (
+            <div className="admin-patient-details">
+              <p>
+                <strong>Patient ID:</strong> {selectedPatient.id}
+              </p>
+
+              <p>
+                <strong>Full Name:</strong>{" "}
+                {selectedPatient.firstName} {selectedPatient.lastName}
+              </p>
+
+              <p>
+                <strong>Email:</strong>{" "}
+                {selectedPatient.user?.email || "Not available"}
+              </p>
+
+              <p>
+                <strong>Phone:</strong>{" "}
+                {selectedPatient.phone || "Not provided"}
+              </p>
+
+              <p>
+                <strong>Date of Birth:</strong>{" "}
+                {selectedPatient.dob
+                  ? new Date(selectedPatient.dob).toLocaleDateString(
+                      "en-ZA",
+                      { timeZone: "UTC" }
+                    )
+                  : "Not provided"}
+              </p>
+
+              <p>
+                <strong>Address:</strong>{" "}
+                {selectedPatient.address || "Not provided"}
+              </p>
+
+              <button
+                type="button"
+                className="admin-action-button"
+                onClick={() => handleEditPatient(selectedPatient)}
+              >
+                Edit Patient
+              </button>
+            </div>
+          ) : (
+            <form
+              className="admin-patient-form"
+              onSubmit={handleUpdatePatient}
+            >
+              <label>
+                First Name
+                <input
+                  type="text"
+                  value={patientForm.firstName}
+                  onChange={(event) =>
+                    setPatientForm({
+                      ...patientForm,
+                      firstName: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+
+              <label>
+                Last Name
+                <input
+                  type="text"
+                  value={patientForm.lastName}
+                  onChange={(event) =>
+                    setPatientForm({
+                      ...patientForm,
+                      lastName: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+
+              <label>
+                Date of Birth
+                <input
+                  type="date"
+                  value={patientForm.dob}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(event) =>
+                    setPatientForm({
+                      ...patientForm,
+                      dob: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+
+              <label>
+                Phone Number
+                <input
+                  type="tel"
+                  value={patientForm.phone}
+                  onChange={(event) =>
+                    setPatientForm({
+                      ...patientForm,
+                      phone: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+
+              <label>
+                Address
+                <textarea
+                  value={patientForm.address}
+                  onChange={(event) =>
+                    setPatientForm({
+                      ...patientForm,
+                      address: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="admin-action-button"
+                  onClick={() => {
+                    setShowPatientForm(false);
+                    setSelectedPatient(null);
+                  }}
+                  disabled={patientSaving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="admin-action-button"
+                  disabled={patientSaving}
+                >
+                  {patientSaving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+      </div>
+    )}
+  </>
+);
+
+
+const renderAppointments = () => {
+  const appointments = dashboardStats?.recentAppointments || [];
+  const totalAppointments = dashboardStats?.appointments ?? 0;
+
+  const formatDate = (dateValue) => {
+    if (!dateValue) return "Not specified";
+
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) return "Invalid date";
+
+    return date.toLocaleDateString("en-ZA", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const formatStatus = (status) => {
+    if (!status) return "Unknown";
+
+    return status
+      .toLowerCase()
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  };
+
+  return (
     <>
       <div className="admin-section-header">
-        <h2>Appointment Management</h2>
-        <p>Monitor appointments across the hospital.</p>
+        <div>
+          <h2>Appointment Management</h2>
+          <p>Monitor appointments across the hospital.</p>
+        </div>
       </div>
 
       <section className="admin-card">
         <div className="admin-card-header">
           <div>
-            <h3>Today's Appointments</h3>
-            <p>Hospital appointment schedule.</p>
+            <h3>Hospital Appointments</h3>
+            <p>Appointment records retrieved from the database.</p>
           </div>
-          <span className="admin-card-count">86 Total</span>
+
+          <span className="admin-card-count">
+            {dashboardLoading
+              ? "Loading..."
+              : `${totalAppointments} Total`}
+          </span>
         </div>
 
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>
               <tr>
+                <th>Date</th>
                 <th>Time</th>
                 <th>Patient</th>
                 <th>Doctor</th>
@@ -1279,56 +2336,169 @@ useEffect(() => {
             </thead>
 
             <tbody>
-              {recentAppointments.map((appointment) => (
-                <tr key={`${appointment.patient}-${appointment.time}-admin`}>
-                  <td>{appointment.time}</td>
-                  <td>{appointment.patient}</td>
-                  <td>{appointment.doctor}</td>
-                  <td>{appointment.department}</td>
-                  <td>
-                    <span
-                      className={`admin-status ${appointment.status
-                        .toLowerCase()
-                        .replace(" ", "-")}`}
-                    >
-                      {appointment.status}
-                    </span>
+              {dashboardLoading ? (
+                <tr>
+                  <td colSpan="6" className="admin-empty-state">
+                    Loading appointments...
                   </td>
                 </tr>
-              ))}
+              ) : dashboardError ? (
+                <tr>
+                  <td colSpan="6" className="admin-empty-state">
+                    <p>{dashboardError}</p>
+                    <button
+                      type="button"
+                      className="admin-secondary-button"
+                      onClick={loadDashboardStats}
+                    >
+                      Retry
+                    </button>
+                  </td>
+                </tr>
+              ) : appointments.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="admin-empty-state">
+                    No appointments found.
+                  </td>
+                </tr>
+              ) : (
+                appointments.map((appointment) => {
+                  const status = appointment.status || "UNKNOWN";
+
+                  const patientName = [
+                    appointment.patient?.firstName,
+                    appointment.patient?.lastName,
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+
+                  const doctorName = [
+                    appointment.doctor?.firstName,
+                    appointment.doctor?.lastName,
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+
+                  return (
+                    <tr key={appointment.id}>
+                      <td>{formatDate(appointment.date)}</td>
+
+                      <td>{appointment.timeSlot || "Not specified"}</td>
+
+                      <td>
+                        {patientName || "Patient unavailable"}
+                      </td>
+
+                      <td>
+                        {doctorName || "Doctor unavailable"}
+                      </td>
+
+                      <td>
+                        {appointment.department?.name ||
+                          "Not assigned"}
+                      </td>
+
+                      <td>
+                        <span
+                          className={`admin-status ${status
+                            .toLowerCase()
+                            .replace(/_/g, "-")}`}
+                        >
+                          {formatStatus(status)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
       </section>
     </>
   );
+};
 
-  const renderReports = () => (
+
+const renderReports = () => {
+  const appointments = dashboardStats?.recentAppointments || [];
+  const appointmentStatuses = dashboardStats?.appointmentStatuses || {};
+
+  const completedAppointments =
+    appointmentStatuses.COMPLETED ?? 0;
+
+  const totalAppointments = dashboardStats?.appointments ?? 0;
+
+  // Summarise the recent appointments returned by the dashboard API.
+  const departmentStats = appointments.reduce((groups, appointment) => {
+    const departmentName =
+      appointment.department?.name || "Unassigned";
+
+    if (!groups[departmentName]) {
+      groups[departmentName] = {
+        name: departmentName,
+        appointments: 0,
+        completed: 0,
+        otherStatuses: 0,
+      };
+    }
+
+    groups[departmentName].appointments += 1;
+
+    if (appointment.status?.toUpperCase() === "COMPLETED") {
+      groups[departmentName].completed += 1;
+    } else {
+      groups[departmentName].otherStatuses += 1;
+    }
+
+    return groups;
+  }, {});
+
+  const departmentRows = Object.values(departmentStats);
+
+  return (
     <>
       <div className="admin-section-header">
-        <h2>Reports & Analytics</h2>
-        <p>Review hospital activity and operational performance.</p>
+        <div>
+          <h2>Reports & Analytics</h2>
+          <p>
+            Review hospital activity and operational performance
+            using database records.
+          </p>
+        </div>
       </div>
 
       <section className="admin-info-grid">
         <div className="admin-info-item">
           <span>Total Appointments</span>
-          <strong>86</strong>
+          <strong>
+            {dashboardLoading
+              ? "..."
+              : dashboardError
+                ? "—"
+                : totalAppointments}
+          </strong>
         </div>
 
         <div className="admin-info-item">
-          <span>Completed</span>
-          <strong>64</strong>
+          <span>Completed Appointments</span>
+          <strong>
+            {dashboardLoading
+              ? "..."
+              : dashboardError
+                ? "—"
+                : completedAppointments}
+          </strong>
         </div>
 
         <div className="admin-info-item">
           <span>Patients Served</span>
-          <strong>58</strong>
+          <strong>Not available</strong>
         </div>
 
         <div className="admin-info-item">
-          <span>Average Wait</span>
-          <strong>22 min</strong>
+          <span>Average Wait Time</span>
+          <strong>Not available</strong>
         </div>
       </section>
 
@@ -1336,8 +2506,16 @@ useEffect(() => {
         <div className="admin-card-header">
           <div>
             <h3>Department Performance</h3>
-            <p>Appointment activity by department.</p>
+            <p>
+              Breakdown of appointments returned by the dashboard API.
+              These figures represent recent records, not necessarily
+              every appointment in the database.
+            </p>
           </div>
+
+          <span className="admin-card-count">
+            {departmentRows.length} Departments
+          </span>
         </div>
 
         <div className="admin-table-wrapper">
@@ -1345,46 +2523,55 @@ useEffect(() => {
             <thead>
               <tr>
                 <th>Department</th>
-                <th>Appointments</th>
+                <th>Recent Appointments</th>
                 <th>Completed</th>
-                <th>Waiting</th>
+                <th>Other Statuses</th>
               </tr>
             </thead>
 
             <tbody>
-              <tr>
-                <td>General Medicine</td>
-                <td>34</td>
-                <td>26</td>
-                <td>5</td>
-              </tr>
-
-              <tr>
-                <td>Dental Care</td>
-                <td>18</td>
-                <td>13</td>
-                <td>3</td>
-              </tr>
-
-              <tr>
-                <td>Dermatology</td>
-                <td>16</td>
-                <td>12</td>
-                <td>2</td>
-              </tr>
-
-              <tr>
-                <td>Paediatrics</td>
-                <td>18</td>
-                <td>13</td>
-                <td>4</td>
-              </tr>
+              {dashboardLoading ? (
+                <tr>
+                  <td colSpan="4" className="admin-empty-state">
+                    Loading report data...
+                  </td>
+                </tr>
+              ) : dashboardError ? (
+                <tr>
+                  <td colSpan="4" className="admin-empty-state">
+                    {dashboardError}
+                    <button
+                      type="button"
+                      className="admin-secondary-button"
+                      onClick={loadDashboardStats}
+                    >
+                      Retry
+                    </button>
+                  </td>
+                </tr>
+              ) : departmentRows.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="admin-empty-state">
+                    No recent appointment records available.
+                  </td>
+                </tr>
+              ) : (
+                departmentRows.map((department) => (
+                  <tr key={department.name}>
+                    <td>{department.name}</td>
+                    <td>{department.appointments}</td>
+                    <td>{department.completed}</td>
+                    <td>{department.otherStatuses}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </section>
     </>
   );
+};
 
   const renderSettings = () => (
     <>

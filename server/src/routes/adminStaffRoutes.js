@@ -5,11 +5,18 @@ const roleGuard = require("../middleware/roleGuard");
 
 const {
     createDoctor,
-    createReceptionist
+    createReceptionist,
+    getAdminUsers
 } = require("../controllers/adminStaffController");
 
 const router = express.Router();
 
+router.get(
+    "/",
+    authenticate,
+    roleGuard("ADMIN"),
+    getAdminUsers
+);
 
 
 router.post(

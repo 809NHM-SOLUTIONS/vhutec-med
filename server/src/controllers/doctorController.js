@@ -1,3 +1,4 @@
+
 const prisma = require("../prisma");
 
 // GET /api/doctors
@@ -18,19 +19,16 @@ const getDoctors = async (req, res) => {
                     }
                 }
             },
-            orderBy: {
-                id: "asc"
-            }
+            orderBy: { id: "asc" }
         });
 
-        res.json({
+        return res.json({
             success: true,
             data: doctors
         });
     } catch (error) {
         console.error("Get doctors error:", error);
-
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to retrieve doctors"
         });
@@ -42,7 +40,7 @@ const getDoctorById = async (req, res) => {
     try {
         const id = Number(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!Number.isSafeInteger(id) || id <= 0) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid doctor ID"
@@ -50,9 +48,7 @@ const getDoctorById = async (req, res) => {
         }
 
         const doctor = await prisma.doctor.findUnique({
-            where: {
-                id
-            },
+            where: { id },
             include: {
                 user: {
                     select: {
@@ -76,20 +72,20 @@ const getDoctorById = async (req, res) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             data: doctor
         });
     } catch (error) {
         console.error("Get doctor error:", error);
-
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to retrieve doctor"
         });
     }
 };
 
+// POST /api/doctors
 const createDoctor = async (req, res) => {
     try {
         const {
@@ -102,25 +98,25 @@ const createDoctor = async (req, res) => {
         } = req.body;
 
         if (
-            !userId ||
-            !firstName ||
-            !lastName ||
-            !speciality ||
-            !licenseNo ||
-            !phone
+            userId === undefined ||
+            !Number.isSafeInteger(Number(userId)) ||
+            Number(userId) <= 0 ||
+            ![firstName, lastName, speciality, licenseNo, phone]
+                .every(value =>
+                    typeof value === "string" && value.trim().length > 0
+                )
         ) {
             return res.status(400).json({
                 success: false,
-                message: "All doctor fields are required"
+                message: "Valid user ID and all doctor fields are required"
             });
         }
 
         const numericUserId = Number(userId);
+        const cleanLicense = licenseNo.trim();
 
         const user = await prisma.user.findUnique({
-            where: {
-                id: numericUserId
-            }
+            where: { id: numericUserId }
         });
 
         if (!user) {
@@ -138,9 +134,7 @@ const createDoctor = async (req, res) => {
         }
 
         const existingDoctor = await prisma.doctor.findUnique({
-            where: {
-                userId: numericUserId
-            }
+            where: { userId: numericUserId }
         });
 
         if (existingDoctor) {
@@ -151,9 +145,7 @@ const createDoctor = async (req, res) => {
         }
 
         const existingLicense = await prisma.doctor.findUnique({
-            where: {
-                licenseNo
-            }
+            where: { licenseNo: cleanLicense }
         });
 
         if (existingLicense) {
@@ -166,15 +158,24 @@ const createDoctor = async (req, res) => {
         const doctor = await prisma.doctor.create({
             data: {
                 userId: numericUserId,
-                firstName,
-                lastName,
-                speciality,
-                licenseNo,
-                phone
+                firstName: firstName.trim(),
+                lastName: lastName.trim(),
+                speciality: speciality.trim(),
+                licenseNo: cleanLicense,
+                phone: phone.trim()
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true
+                    }
+                }
             }
         });
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: "Doctor created successfully",
             data: doctor
@@ -182,32 +183,31 @@ const createDoctor = async (req, res) => {
     } catch (error) {
         console.error("Create doctor error:", error);
 
-        res.status(500).json({
+        if (error.code === "P2002") {
+            return res.status(409).json({
+                success: false,
+                message: "A doctor with these unique details already exists"
+            });
+        }
+
+        return res.status(500).json({
             success: false,
             message: "Failed to create doctor"
         });
     }
 };
 
-
+// PUT /api/doctors/:id
 const updateDoctor = async (req, res) => {
     try {
         const id = Number(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!Number.isSafeInteger(id) || id <= 0) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid doctor ID"
             });
         }
-
-        const {
-            firstName,
-            lastName,
-            speciality,
-            licenseNo,
-            phone
-        } = req.body;
 
         const existingDoctor = await prisma.doctor.findUnique({
             where: { id }
@@ -220,9 +220,44 @@ const updateDoctor = async (req, res) => {
             });
         }
 
-        if (licenseNo !== undefined && licenseNo !== existingDoctor.licenseNo) {
+        const fields = [
+            "firstName",
+            "lastName",
+            "speciality",
+            "licenseNo",
+            "phone"
+        ];
+
+        const data = {};
+
+        for (const field of fields) {
+            if (req.body[field] !== undefined) {
+                const value = req.body[field];
+
+                if (typeof value !== "string" || !value.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `${field} must be a non-empty string`
+                    });
+                }
+
+                data[field] = value.trim();
+            }
+        }
+
+        if (Object.keys(data).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Provide at least one field to update"
+            });
+        }
+
+        if (
+            data.licenseNo &&
+            data.licenseNo !== existingDoctor.licenseNo
+        ) {
             const existingLicense = await prisma.doctor.findUnique({
-                where: { licenseNo }
+                where: { licenseNo: data.licenseNo }
             });
 
             if (existingLicense) {
@@ -235,16 +270,24 @@ const updateDoctor = async (req, res) => {
 
         const doctor = await prisma.doctor.update({
             where: { id },
-            data: {
-                ...(firstName !== undefined && { firstName }),
-                ...(lastName !== undefined && { lastName }),
-                ...(speciality !== undefined && { speciality }),
-                ...(licenseNo !== undefined && { licenseNo }),
-                ...(phone !== undefined && { phone })
+            data,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true
+                    }
+                },
+                departments: {
+                    include: {
+                        department: true
+                    }
+                }
             }
         });
 
-        res.json({
+        return res.json({
             success: true,
             message: "Doctor updated successfully",
             data: doctor
@@ -252,18 +295,26 @@ const updateDoctor = async (req, res) => {
     } catch (error) {
         console.error("Update doctor error:", error);
 
-        res.status(500).json({
+        if (error.code === "P2002") {
+            return res.status(409).json({
+                success: false,
+                message: "A unique doctor field already exists"
+            });
+        }
+
+        return res.status(500).json({
             success: false,
             message: "Failed to update doctor"
         });
     }
 };
 
+// DELETE /api/doctors/:id
 const deleteDoctor = async (req, res) => {
     try {
         const id = Number(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!Number.isSafeInteger(id) || id <= 0) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid doctor ID"
@@ -281,24 +332,54 @@ const deleteDoctor = async (req, res) => {
             });
         }
 
-        await prisma.doctor.delete({
-            where: { id }
+        const [appointmentCount, consultationCount] =
+            await Promise.all([
+                prisma.appointment.count({
+                    where: { doctorId: id }
+                }),
+                prisma.consultation.count({
+                    where: { doctorId: id }
+                })
+            ]);
+
+        if (appointmentCount > 0 || consultationCount > 0) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "This doctor has appointment or consultation records and cannot be deleted."
+            });
+        }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.doctorDepartment.deleteMany({
+                where: { doctorId: id }
+            });
+
+            await tx.doctor.delete({
+                where: { id }
+            });
         });
 
-        res.json({
+        return res.json({
             success: true,
             message: "Doctor deleted successfully"
         });
     } catch (error) {
         console.error("Delete doctor error:", error);
 
-        res.status(500).json({
+        if (error.code === "P2003" || error.code === "P2014") {
+            return res.status(409).json({
+                success: false,
+                message: "This doctor has linked records and cannot be deleted."
+            });
+        }
+
+        return res.status(500).json({
             success: false,
             message: "Failed to delete doctor"
         });
     }
 };
-
 
 module.exports = {
     getDoctors,

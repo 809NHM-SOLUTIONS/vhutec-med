@@ -367,7 +367,74 @@ const createReceptionist = async (req, res) => {
     }
 };
 
+// --------------------------------------------------
+// Get all registered user accounts
+// GET /api/admin/staff
+// --------------------------------------------------
+
+const getAdminUsers = async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            select: {
+                id: true,
+                email: true,
+                role: true,
+
+                patient: true,
+                doctor: true,
+                receptionist: true
+            },
+            orderBy: {
+                id: "asc"
+            }
+        });
+
+        const formattedUsers = users.map((user) => {
+            let firstName = "";
+            let lastName = "";
+
+            if (user.patient) {
+                firstName = user.patient.firstName;
+                lastName = user.patient.lastName;
+            } else if (user.doctor) {
+                firstName = user.doctor.firstName;
+                lastName = user.doctor.lastName;
+            } else if (user.receptionist) {
+                firstName = user.receptionist.firstName;
+                lastName = user.receptionist.lastName;
+            }
+
+            return {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+                firstName,
+                lastName,
+                fullName:
+                    `${firstName} ${lastName}`.trim() ||
+                    (user.role === "ADMIN"
+                        ? "Administrator"
+                        : "Profile not available")
+            };
+        });
+
+        return res.json({
+            success: true,
+            data: formattedUsers,
+            count: formattedUsers.length
+        });
+    } catch (error) {
+        console.error("Get admin users error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve user accounts"
+        });
+    }
+};
+
 module.exports = {
     createDoctor,
-    createReceptionist
+    createReceptionist,
+    getAdminUsers
 };

@@ -217,11 +217,12 @@ const createPatient = async (req, res) => {
     }
 };
 
+
 const updatePatient = async (req, res) => {
     try {
         const id = Number(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!Number.isSafeInteger(id) || id <= 0) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid patient ID"
@@ -247,18 +248,77 @@ const updatePatient = async (req, res) => {
             });
         }
 
+        const data = {};
+
+        const textFields = {
+            firstName,
+            lastName,
+            phone,
+            address
+        };
+
+        for (const [field, value] of Object.entries(textFields)) {
+            if (value !== undefined) {
+                if (typeof value !== "string" || !value.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `${field} must be a non-empty string`
+                    });
+                }
+
+                data[field] = value.trim();
+            }
+        }
+
+        if (dob !== undefined) {
+            if (
+                typeof dob !== "string" ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(dob)
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Date of birth must use YYYY-MM-DD format"
+                });
+            }
+
+            const parsedDate = new Date(`${dob}T00:00:00.000Z`);
+
+            if (
+                Number.isNaN(parsedDate.getTime()) ||
+                parsedDate.toISOString().slice(0, 10) !== dob ||
+                parsedDate > new Date()
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide a valid date of birth"
+                });
+            }
+
+            data.dob = parsedDate;
+        }
+
+        if (Object.keys(data).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Provide at least one valid field to update"
+            });
+        }
+
         const patient = await prisma.patient.update({
             where: { id },
-            data: {
-                ...(firstName !== undefined && { firstName }),
-                ...(lastName !== undefined && { lastName }),
-                ...(dob !== undefined && { dob: new Date(dob) }),
-                ...(phone !== undefined && { phone }),
-                ...(address !== undefined && { address })
+            data,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true
+                    }
+                }
             }
         });
 
-        res.json({
+        return res.json({
             success: true,
             message: "Patient updated successfully",
             data: patient
@@ -266,18 +326,19 @@ const updatePatient = async (req, res) => {
     } catch (error) {
         console.error("Update patient error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to update patient"
         });
     }
 };
 
+
 const deletePatient = async (req, res) => {
     try {
         const id = Number(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!Number.isSafeInteger(id) || id <= 0) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid patient ID"
@@ -295,18 +356,40 @@ const deletePatient = async (req, res) => {
             });
         }
 
+        // Preserve patient records linked to appointments.
+        const appointmentCount = await prisma.appointment.count({
+            where: { patientId: id }
+        });
+
+        if (appointmentCount > 0) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "This patient has appointment records and cannot be deleted. Preserve the medical history instead."
+            });
+        }
+
         await prisma.patient.delete({
             where: { id }
         });
 
-        res.json({
+        return res.json({
             success: true,
             message: "Patient deleted successfully"
         });
     } catch (error) {
         console.error("Delete patient error:", error);
 
-        res.status(500).json({
+        // Foreign-key protection: never force-delete related records.
+        if (error.code === "P2003" || error.code === "P2014") {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "This patient has linked records and cannot be deleted."
+            });
+        }
+
+        return res.status(500).json({
             success: false,
             message: "Failed to delete patient"
         });
