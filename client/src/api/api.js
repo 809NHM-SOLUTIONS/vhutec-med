@@ -78,3 +78,6 @@ export const fetchReceptionQueue = () =>
 
 export const fetchReceptionPatients = (search = "") =>
   api.get("/receptionist/patients", { params: { search } }).then((res) => res.data);
+
+export const fetchDoctorDashboard = () =>
+    api.get("/doctors/me/dashboard").then(res => res.data);

@@ -9,6 +9,10 @@ const {
     deleteDoctor
 } = require("../controllers/doctorController");
 
+const {
+    getMyDoctorDashboard
+} = require("../controllers/doctorDashboardController");
+
 const authenticate = require("../middleware/auth");
 const roleGuard = require("../middleware/roleGuard");
 
@@ -33,6 +37,15 @@ router.get(
     getDoctorById
 );
 
+
+router.get(
+    "/me/dashboard",
+    authenticate,
+    roleGuard("DOCTOR"),
+    getMyDoctorDashboard
+);
+
+
 // Only administrators can manage doctor profiles through these endpoints.
 router.post(
     "/",
@@ -54,5 +67,7 @@ router.delete(
     roleGuard("ADMIN"),
     deleteDoctor
 );
+
+
 
 module.exports = router;

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchDoctorDashboard } from "../../api/api";
 import {
   FiActivity,
   FiCalendar,
@@ -19,6 +20,182 @@ const DoctorDashboard = () => {
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  
+  const [doctor, setDoctor] = useState(null);
+  const [appointmentsData, setAppointmentsData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDashboard = async () => {
+      try {
+        setLoading(true);
+        setLoadError("");
+
+        const result = await fetchDoctorDashboard();
+
+        if (!result?.success) {
+          throw new Error(
+            result?.message || "Failed to load doctor dashboard."
+          );
+        }
+
+        if (!active) return;
+
+        setDoctor(result.data);
+        setAppointmentsData(
+          Array.isArray(result.data?.appointments)
+            ? result.data.appointments
+            : []
+        );
+      } catch (error) {
+        if (active) {
+          setLoadError(
+            error.message || "Unable to load dashboard data."
+          );
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadDashboard();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const formatDate = (value) => {
+    if (!value) return "Not available";
+
+    return new Date(value).toLocaleDateString("en-ZA", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const getLocalDateKey = (value) => {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "";
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayKey = getLocalDateKey(new Date());
+
+  const todayAppointments = useMemo(
+    () =>
+      appointmentsData.filter(
+        (appointment) =>
+          getLocalDateKey(appointment.date) === todayKey
+      ),
+    [appointmentsData, todayKey]
+  );
+
+  const waitingAppointments = useMemo(
+    () =>
+      appointmentsData.filter(
+        (appointment) =>
+          appointment.queue?.status === "WAITING"
+      ),
+    [appointmentsData]
+  );
+
+  const completedAppointments = useMemo(
+    () =>
+      appointmentsData.filter(
+        (appointment) =>
+          appointment.status === "COMPLETED" ||
+          appointment.queue?.status === "COMPLETED"
+      ),
+    [appointmentsData]
+  );
+
+  const uniquePatients = useMemo(() => {
+    const patientMap = new Map();
+
+    appointmentsData.forEach((appointment) => {
+      if (appointment.patient) {
+        patientMap.set(
+          appointment.patient.id,
+          appointment.patient
+        );
+      }
+    });
+
+    return Array.from(patientMap.values());
+  }, [appointmentsData]);
+
+  const getPatientName = (patient) =>
+    patient
+      ? `${patient.firstName || ""} ${patient.lastName || ""}`.trim()
+      : "Unknown patient";
+
+  const getPatientInitials = (patient) => {
+    if (!patient) return "NA";
+
+    return `${patient.firstName?.[0] || ""}${
+      patient.lastName?.[0] || ""
+    }`.toUpperCase() || "NA";
+  };
+
+  const getFileNumber = (patient) =>
+    patient?.patientNumber || "Not assigned";
+
+  const getStatusLabel = (status) => {
+    if (!status) return "Not available";
+
+    return status
+      .toLowerCase()
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  };
+
+  const getStatusClass = (status) => {
+    const normalized = (status || "").toLowerCase();
+
+    if (normalized === "completed") return "confirmed";
+    if (normalized === "confirmed") return "confirmed";
+    if (normalized === "pending") return "pending";
+    if (normalized === "checked_in") return "checked";
+    if (normalized === "in_progress") return "checked";
+    if (normalized === "cancelled") return "pending";
+    if (normalized === "waiting") return "waiting";
+    if (normalized === "called") return "checked";
+    if (normalized === "in_consultation") return "checked";
+
+    return "pending";
+  };
+
+  const getAppointmentStatus = (appointment) => {
+    if (appointment.queue?.status === "IN_CONSULTATION") {
+      return "In Consultation";
+    }
+
+    if (appointment.queue?.status === "CALLED") {
+      return "Called";
+    }
+
+    if (appointment.queue?.status === "WAITING") {
+      return "Waiting";
+    }
+
+    return getStatusLabel(appointment.status);
+  };
+
+  const getAppointmentTime = (appointment) =>
+    appointment.timeSlot || "Not set";
+
+
   const navigation = [
     { label: "Dashboard", icon: FiGrid },
     { label: "Appointments", icon: FiCalendar },
@@ -29,90 +206,7 @@ const DoctorDashboard = () => {
     { label: "Notifications", icon: FiMessageSquare },
   ];
 
-  const patients = [
-    {
-      initials: "TM",
-      patient: "Thabo Mokoena",
-      fileNumber: "VH-2026-00421",
-      reason: "General consultation",
-      status: "Waiting",
-    },
-    {
-      initials: "LM",
-      patient: "Lerato Dlamini",
-      fileNumber: "VH-2026-00436",
-      reason: "Follow-up consultation",
-      status: "Checked In",
-    },
-    {
-      initials: "MN",
-      patient: "Mpho Nkosi",
-      fileNumber: "VH-2026-00452",
-      reason: "Routine consultation",
-      status: "Waiting",
-    },
-    {
-      initials: "KM",
-      patient: "Karabo Molefe",
-      fileNumber: "VH-2026-00467",
-      reason: "General consultation",
-      status: "Waiting",
-    },
-  ];
-
-  const appointments = [
-    {
-      patient: "Thabo Mokoena",
-      time: "09:30",
-      type: "General Medicine",
-      status: "Confirmed",
-    },
-    {
-      patient: "Lerato Dlamini",
-      time: "10:30",
-      type: "Follow-up",
-      status: "Confirmed",
-    },
-    {
-      patient: "Mpho Nkosi",
-      time: "11:00",
-      type: "Routine Consultation",
-      status: "Pending",
-    },
-    {
-      patient: "Karabo Molefe",
-      time: "13:30",
-      type: "General Medicine",
-      status: "Confirmed",
-    },
-  ];
-
-  const activities = [
-    {
-      icon: FiCheckCircle,
-      title: "Consultation completed",
-      description: "A patient consultation was completed successfully.",
-      time: "15 minutes ago",
-    },
-    {
-      icon: FiFileText,
-      title: "Medical record updated",
-      description: "Patient medical notes were updated.",
-      time: "35 minutes ago",
-    },
-    {
-      icon: FiUserCheck,
-      title: "Patient checked in",
-      description: "Lerato Dlamini has checked in for consultation.",
-      time: "50 minutes ago",
-    },
-    {
-      icon: FiCalendar,
-      title: "Appointment confirmed",
-      description: "A new appointment was confirmed for today.",
-      time: "1 hour ago",
-    },
-  ];
+  
 
   const handleNavigation = (label) => {
     setActiveSection(label);
@@ -125,266 +219,276 @@ const DoctorDashboard = () => {
     window.location.href = "/login";
   };
 
+ 
   const renderAppointments = () => (
-  <>
-    <div className="doctor-section-header">
-      <h2>Appointments</h2>
-      <p>Manage your scheduled patient appointments for today.</p>
-    </div>
+    <>
+      <div className="doctor-section-header">
+        <h2>Appointments</h2>
+        <p>Manage your scheduled patient appointments.</p>
+      </div>
 
-    <section className="doctor-stats">
-      <div className="doctor-stat-card">
-        <div className="doctor-stat-icon">
-          <FiCalendar />
+      <section className="doctor-stats">
+        <div className="doctor-stat-card">
+          <div className="doctor-stat-icon"><FiCalendar /></div>
+          <span>Today's Appointments</span>
+          <h3>{todayAppointments.length}</h3>
+          <span className="doctor-stat-change">Based on scheduled dates</span>
         </div>
-        <span>Today's Appointments</span>
-        <h3>12</h3>
-        <span className="doctor-stat-change">4 completed</span>
-      </div>
 
-      <div className="doctor-stat-card">
-        <div className="doctor-stat-icon">
-          <FiClock />
+        <div className="doctor-stat-card">
+          <div className="doctor-stat-icon"><FiClock /></div>
+          <span>Upcoming</span>
+          <h3>
+            {appointmentsData.filter(
+              (a) =>
+                getLocalDateKey(a.date) > todayKey &&
+                !["COMPLETED", "CANCELLED"].includes(a.status)
+            ).length}
+          </h3>
+          <span className="doctor-stat-change">Future appointments</span>
         </div>
-        <span>Upcoming</span>
-        <h3>8</h3>
-        <span className="doctor-stat-change">Next at 09:30</span>
-      </div>
 
-      <div className="doctor-stat-card">
-        <div className="doctor-stat-icon">
-          <FiCheckCircle />
+        <div className="doctor-stat-card">
+          <div className="doctor-stat-icon"><FiCheckCircle /></div>
+          <span>Confirmed</span>
+          <h3>
+            {appointmentsData.filter((a) => a.status === "CONFIRMED").length}
+          </h3>
+          <span className="doctor-stat-change">All scheduled dates</span>
         </div>
-        <span>Confirmed</span>
-        <h3>9</h3>
-        <span className="doctor-stat-change">Ready for consultation</span>
-      </div>
 
-      <div className="doctor-stat-card">
-        <div className="doctor-stat-icon">
-          <FiActivity />
+        <div className="doctor-stat-card">
+          <div className="doctor-stat-icon"><FiActivity /></div>
+          <span>Pending</span>
+          <h3>
+            {appointmentsData.filter((a) => a.status === "PENDING").length}
+          </h3>
+          <span className="doctor-stat-change">Awaiting confirmation</span>
         </div>
-        <span>Pending</span>
-        <h3>2</h3>
-        <span className="doctor-stat-change">Requires attention</span>
-      </div>
-    </section>
+      </section>
 
-    <section className="doctor-card">
-      <div className="doctor-card-header">
-        <div>
-          <h3>Today's Appointment Schedule</h3>
-          <p>30 September 2026 • General Medicine</p>
-        </div>
-      </div>
-
-      <div className="doctor-table-wrapper">
-        <table className="doctor-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Patient</th>
-              <th>File Number</th>
-              <th>Appointment Type</th>
-              <th>Room</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr>
-              <td>09:30</td>
-              <td>Thabo Mokoena</td>
-              <td>VH-2026-00421</td>
-              <td>General Medicine</td>
-              <td>Room 4</td>
-              <td><span className="doctor-status confirmed">Confirmed</span></td>
-            </tr>
-
-            <tr>
-              <td>10:30</td>
-              <td>Lerato Dlamini</td>
-              <td>VH-2026-00436</td>
-              <td>Follow-up</td>
-              <td>Room 4</td>
-              <td><span className="doctor-status confirmed">Confirmed</span></td>
-            </tr>
-
-            <tr>
-              <td>11:00</td>
-              <td>Mpho Nkosi</td>
-              <td>VH-2026-00452</td>
-              <td>Routine Consultation</td>
-              <td>Room 4</td>
-              <td><span className="doctor-status pending">Pending</span></td>
-            </tr>
-
-            <tr>
-              <td>13:30</td>
-              <td>Karabo Molefe</td>
-              <td>VH-2026-00467</td>
-              <td>General Medicine</td>
-              <td>Room 4</td>
-              <td><span className="doctor-status confirmed">Confirmed</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </>
-);
-
-const renderPatients = () => (
-  <>
-    <div className="doctor-section-header">
-      <h2>Patients</h2>
-      <p>View and manage patients assigned to your clinical workspace.</p>
-    </div>
-
-    <section className="doctor-card">
-      <div className="doctor-card-header">
-        <div>
-          <h3>Patient Directory</h3>
-          <p>Registered patients with recent clinical activity.</p>
-        </div>
-      </div>
-
-      <div className="doctor-table-wrapper">
-        <table className="doctor-table">
-          <thead>
-            <tr>
-              <th>Patient</th>
-              <th>File Number</th>
-              <th>Age</th>
-              <th>Gender</th>
-              <th>Last Visit</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr>
-              <td>Thabo Mokoena</td>
-              <td>VH-2026-00421</td>
-              <td>28</td>
-              <td>Male</td>
-              <td>12 Sep 2026</td>
-              <td><span className="doctor-status waiting">Waiting</span></td>
-            </tr>
-
-            <tr>
-              <td>Lerato Dlamini</td>
-              <td>VH-2026-00436</td>
-              <td>34</td>
-              <td>Female</td>
-              <td>18 Sep 2026</td>
-              <td><span className="doctor-status checked">Checked In</span></td>
-            </tr>
-
-            <tr>
-              <td>Mpho Nkosi</td>
-              <td>VH-2026-00452</td>
-              <td>41</td>
-              <td>Male</td>
-              <td>21 Sep 2026</td>
-              <td><span className="doctor-status waiting">Waiting</span></td>
-            </tr>
-
-            <tr>
-              <td>Karabo Molefe</td>
-              <td>VH-2026-00467</td>
-              <td>25</td>
-              <td>Female</td>
-              <td>25 Sep 2026</td>
-              <td><span className="doctor-status confirmed">Scheduled</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </>
-);
-
-const renderQueue = () => (
-  <>
-    <div className="doctor-section-header">
-      <h2>Patient Queue</h2>
-      <p>Monitor patients currently waiting for consultation.</p>
-    </div>
-
-    <section className="doctor-stats">
-      <div className="doctor-stat-card">
-        <div className="doctor-stat-icon">
-          <FiUsers />
-        </div>
-        <span>Patients Waiting</span>
-        <h3>6</h3>
-        <span className="doctor-stat-change">Across today's queue</span>
-      </div>
-
-      <div className="doctor-stat-card">
-        <div className="doctor-stat-icon">
-          <FiUserCheck />
-        </div>
-        <span>Checked In</span>
-        <h3>4</h3>
-        <span className="doctor-stat-change">Ready for consultation</span>
-      </div>
-
-      <div className="doctor-stat-card">
-        <div className="doctor-stat-icon">
-          <FiClock />
-        </div>
-        <span>Average Wait</span>
-        <h3>18 min</h3>
-        <span className="doctor-stat-change">Current estimate</span>
-      </div>
-    </section>
-
-    <section className="doctor-card">
-      <div className="doctor-card-header">
-        <div>
-          <h3>Live Consultation Queue</h3>
-          <p>Patients currently waiting for Dr. Naledi Maseko.</p>
-        </div>
-      </div>
-
-      <div className="doctor-workspace-list">
-        <div className="doctor-workspace-row">
+      <section className="doctor-card">
+        <div className="doctor-card-header">
           <div>
-            <strong>#01 • Thabo Mokoena</strong>
-            <span>VH-2026-00421 • General consultation • Waiting 8 min</span>
+            <h3>Appointment Schedule</h3>
+            <p>Appointments assigned to you, ordered by date and time.</p>
           </div>
-          <span className="doctor-status waiting">Waiting</span>
         </div>
 
-        <div className="doctor-workspace-row">
-          <div>
-            <strong>#02 • Lerato Dlamini</strong>
-            <span>VH-2026-00436 • Follow-up consultation • Waiting 12 min</span>
-          </div>
-          <span className="doctor-status checked">Checked In</span>
-        </div>
+        <div className="doctor-table-wrapper">
+          <table className="doctor-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Patient</th>
+                <th>File Number</th>
+                <th>Department</th>
+                <th>Status</th>
+              </tr>
+            </thead>
 
-        <div className="doctor-workspace-row">
-          <div>
-            <strong>#03 • Mpho Nkosi</strong>
-            <span>VH-2026-00452 • Routine consultation • Waiting 17 min</span>
-          </div>
-          <span className="doctor-status waiting">Waiting</span>
-        </div>
+            <tbody>
+              {appointmentsData.map((appointment) => (
+                <tr key={appointment.id}>
+                  <td>{formatDate(appointment.date)}</td>
+                  <td>{getAppointmentTime(appointment)}</td>
+                  <td>{getPatientName(appointment.patient)}</td>
+                  <td>{getFileNumber(appointment.patient)}</td>
+                  <td>{appointment.department?.name || "Not assigned"}</td>
+                  <td>
+                    <span className={`doctor-status ${getStatusClass(appointment.status)}`}>
+                      {getAppointmentStatus(appointment)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
 
-        <div className="doctor-workspace-row">
-          <div>
-            <strong>#04 • Karabo Molefe</strong>
-            <span>VH-2026-00467 • General consultation • Waiting 21 min</span>
-          </div>
-          <span className="doctor-status waiting">Waiting</span>
+              {appointmentsData.length === 0 && (
+                <tr>
+                  <td colSpan="6">
+                    No appointments have been assigned to you yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
+      </section>
+    </>
+  );
+
+
+
+  const renderPatients = () => (
+    <>
+      <div className="doctor-section-header">
+        <h2>Patients</h2>
+        <p>Patients associated with your appointments.</p>
       </div>
-    </section>
-  </>
-);
+
+      <section className="doctor-card">
+        <div className="doctor-card-header">
+          <div>
+            <h3>Patient Directory</h3>
+            <p>Unique patients linked to your appointments.</p>
+          </div>
+        </div>
+
+        <div className="doctor-table-wrapper">
+          <table className="doctor-table">
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>File Number</th>
+                <th>Date of Birth</th>
+                <th>Last Appointment</th>
+                <th>Appointment Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {uniquePatients.map((patient) => {
+                const patientAppointments = appointmentsData
+                  .filter((a) => a.patient?.id === patient.id)
+                  .sort(
+                    (a, b) =>
+                      new Date(b.date).getTime() -
+                      new Date(a.date).getTime()
+                  );
+
+                const latestAppointment = patientAppointments[0];
+
+                return (
+                  <tr key={patient.id}>
+                    <td>{getPatientName(patient)}</td>
+                    <td>{getFileNumber(patient)}</td>
+                    <td>{formatDate(patient.dob)}</td>
+                    <td>
+                      {latestAppointment
+                        ? formatDate(latestAppointment.date)
+                        : "Not available"}
+                    </td>
+                    <td>
+                      {latestAppointment ? (
+                        <span
+                          className={`doctor-status ${getStatusClass(
+                            latestAppointment.status
+                          )}`}
+                        >
+                          {getAppointmentStatus(latestAppointment)}
+                        </span>
+                      ) : (
+                        "Not available"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {uniquePatients.length === 0 && (
+                <tr>
+                  <td colSpan="5">No patients found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
+  );
+
+
+
+  const renderQueue = () => {
+    const queuedAppointments = appointmentsData
+      .filter((appointment) => appointment.queue)
+      .sort(
+        (a, b) =>
+          (a.queue?.queueNumber ?? Infinity) -
+          (b.queue?.queueNumber ?? Infinity)
+      );
+
+    return (
+      <>
+        <div className="doctor-section-header">
+          <h2>Patient Queue</h2>
+          <p>Monitor queue records linked to your appointments.</p>
+        </div>
+
+        <section className="doctor-stats">
+          <div className="doctor-stat-card">
+            <div className="doctor-stat-icon"><FiUsers /></div>
+            <span>Patients Waiting</span>
+            <h3>{waitingAppointments.length}</h3>
+            <span className="doctor-stat-change">Current queue status</span>
+          </div>
+
+          <div className="doctor-stat-card">
+            <div className="doctor-stat-icon"><FiUserCheck /></div>
+            <span>In Consultation</span>
+            <h3>
+              {appointmentsData.filter(
+                (a) => a.queue?.status === "IN_CONSULTATION"
+              ).length}
+            </h3>
+            <span className="doctor-stat-change">Currently being attended</span>
+          </div>
+
+          <div className="doctor-stat-card">
+            <div className="doctor-stat-icon"><FiCheckCircle /></div>
+            <span>Completed</span>
+            <h3>{completedAppointments.length}</h3>
+            <span className="doctor-stat-change">Completed appointments</span>
+          </div>
+        </section>
+
+        <section className="doctor-card">
+          <div className="doctor-card-header">
+            <div>
+              <h3>Consultation Queue</h3>
+              <p>Actual queue records from the database.</p>
+            </div>
+          </div>
+
+          <div className="doctor-workspace-list">
+            {queuedAppointments.map((appointment) => (
+              <div className="doctor-workspace-row" key={appointment.id}>
+                <div>
+                  <strong>
+                    #{String(appointment.queue.queueNumber).padStart(2, "0")}
+                    {" • "}
+                    {getPatientName(appointment.patient)}
+                  </strong>
+
+                  <span>
+                    {getFileNumber(appointment.patient)}
+                    {" • "}
+                    {appointment.reason || "No reason provided"}
+                    {" • "}
+                    {getAppointmentTime(appointment)}
+                  </span>
+                </div>
+
+                <span
+                  className={`doctor-status ${getStatusClass(
+                    appointment.queue.status
+                  )}`}
+                >
+                  {getStatusLabel(appointment.queue.status)}
+                </span>
+              </div>
+            ))}
+
+            {queuedAppointments.length === 0 && (
+              <p>No queue records are currently available.</p>
+            )}
+          </div>
+        </section>
+      </>
+    );
+  };
+
 
 const renderConsultations = () => (
   <>
@@ -689,7 +793,7 @@ const renderNotifications = () => (
           </div>
 
           <span>Today's Appointments</span>
-          <h3>12</h3>
+          <h3>{todayAppointments.length}</h3>
           <span className="doctor-stat-change">
             4 completed today
           </span>
@@ -703,10 +807,12 @@ const renderNotifications = () => (
           </div>
 
           <span>Patients Today</span>
-          <h3>18</h3>
-          <span className="doctor-stat-change">
-            6 patients currently waiting
-          </span>
+          <h3>
+  {new Set(todayAppointments.map((a) => a.patientId)).size}
+</h3>
+<span className="doctor-stat-change">
+  {waitingAppointments.length} patients waiting
+</span>
         </div>
 
         <div className="doctor-stat-card">
@@ -717,10 +823,10 @@ const renderNotifications = () => (
           </div>
 
           <span>Waiting Queue</span>
-          <h3>6</h3>
-          <span className="doctor-stat-change">
-            Next patient: #04
-          </span>
+         <h3>{waitingAppointments.length}</h3>
+<span className="doctor-stat-change">
+  Patients currently waiting
+</span>
         </div>
 
         <div className="doctor-stat-card">
@@ -731,10 +837,10 @@ const renderNotifications = () => (
           </div>
 
           <span>Completed Consultations</span>
-          <h3>46</h3>
-          <span className="doctor-stat-change">
-            This month
-          </span>
+         <h3>{completedAppointments.length}</h3>
+<span className="doctor-stat-change">
+  Completed appointments in your schedule
+</span>
         </div>
       </section>
 
@@ -755,25 +861,23 @@ const renderNotifications = () => (
           </div>
 
           <div className="doctor-patient-list">
-            {patients.map((patient) => (
+            {waitingAppointments.map((appointment) => (
               <div
                 className="doctor-patient-item"
-                key={patient.fileNumber}
+                key={appointment.id}
               >
                 <div className="doctor-patient-avatar">
-                  {patient.initials}
-                </div>
+  {getPatientInitials(appointment.patient)}
+</div>
 
-                <div className="doctor-patient-info">
-                  <strong>{patient.patient}</strong>
-                  <span>
-                    {patient.fileNumber} · {patient.reason}
-                  </span>
-                </div>
+<div className="doctor-patient-info">
+  <strong>{getPatientName(appointment.patient)}</strong>
+  <span>
+    {getFileNumber(appointment.patient)} · {appointment.reason}
+  </span>
+</div>
 
-                <span className="doctor-patient-status">
-                  {patient.status}
-                </span>
+<span className="doctor-patient-status">Waiting</span>
               </div>
             ))}
           </div>
@@ -829,9 +933,7 @@ const renderNotifications = () => (
         <div className="doctor-card-header">
           <div>
             <h3>Today's Appointments</h3>
-            <p>
-              Appointments scheduled for 30 September 2026.
-            </p>
+            <p>Appointments scheduled for today.</p>
           </div>
 
           <button
@@ -853,56 +955,52 @@ const renderNotifications = () => (
               </tr>
             </thead>
 
-            <tbody>
-              {appointments.map((appointment, index) => (
-                <tr key={index}>
-                  <td>{appointment.patient}</td>
-                  <td>{appointment.time}</td>
-                  <td>{appointment.type}</td>
-                  <td>
-                    <span
-                      className={`doctor-status ${appointment.status.toLowerCase()}`}
-                    >
-                      {appointment.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+           <tbody>
+  {todayAppointments.map((appointment) => (
+    <tr key={appointment.id}>
+      <td>{getPatientName(appointment.patient)}</td>
+      <td>{getAppointmentTime(appointment)}</td>
+      <td>{appointment.reason || "General consultation"}</td>
+      <td>
+        <span
+          className={`doctor-status ${getStatusClass(
+            appointment.status
+          )}`}
+        >
+          {getAppointmentStatus(appointment)}
+        </span>
+      </td>
+    </tr>
+  ))}
+
+  {todayAppointments.length === 0 && (
+    <tr>
+      <td colSpan="4">No appointments scheduled for today.</td>
+    </tr>
+  )}
+</tbody>
           </table>
         </div>
       </section>
 
-      <section className="doctor-card">
-        <div className="doctor-card-header">
-          <div>
-            <h3>Recent Clinical Activity</h3>
-            <p>Latest activity from your medical workspace.</p>
-          </div>
-        </div>
+      
+<section className="doctor-card">
+  <div className="doctor-card-header">
+    <div>
+      <h3>Recent Clinical Activity</h3>
+      <p>Latest activity from your medical workspace.</p>
+    </div>
+  </div>
 
-        <div className="doctor-activity-list">
-          {activities.map((activity, index) => {
-            const Icon = activity.icon;
+  <div className="doctor-activity-list">
+    <p>
+      Clinical activity history is not available yet.
+      Activity tracking can be connected when the backend supports it.
+    </p>
+  </div>
+</section>
 
-            return (
-              <div className="doctor-activity" key={index}>
-                <div className="doctor-activity-icon">
-                  <Icon />
-                </div>
-
-                <div>
-                  <strong>{activity.title}</strong>
-                  <p>{activity.description}</p>
-                  <p>{activity.time}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="doctor-card">
+      {/* <section className="doctor-card">
         <div className="doctor-card-header">
           <div>
             <h3>Quick Actions</h3>
@@ -943,7 +1041,11 @@ const renderNotifications = () => (
             <span>Medical Records</span>
           </button>
         </div>
-      </section>
+      </section> */}
+
+  
+
+
     </>
   );
 
@@ -1030,26 +1132,46 @@ const renderNotifications = () => (
             </p>
           </div>
 
-          <div className="doctor-profile">
-            <div className="doctor-profile-avatar">
-              NM
-            </div>
+          
+<div className="doctor-profile">
+  <div className="doctor-profile-avatar">
+    {doctor
+      ? getPatientInitials(doctor)
+      : "DR"}
+  </div>
 
-            <div className="doctor-profile-info">
-              <strong>Dr. Naledi Maseko</strong>
-              <span>General Medicine</span>
-            </div>
-          </div>
+  <div className="doctor-profile-info">
+    <strong>
+      {doctor
+        ? `Dr. ${doctor.firstName} ${doctor.lastName}`
+        : "Loading doctor..."}
+    </strong>
+
+    <span>
+      {doctor?.speciality || "Doctor"}
+    </span>
+  </div>
+</div>
+
         </header>
 
         <section className="doctor-content">
-          {activeSection === "Dashboard" && renderDashboard()}
-{activeSection === "Appointments" && renderAppointments()}
-{activeSection === "Patients" && renderPatients()}
-{activeSection === "Queue" && renderQueue()}
-{activeSection === "Consultations" && renderConsultations()}
-{activeSection === "Medical Records" && renderMedicalRecords()}
-{activeSection === "Notifications" && renderNotifications()}
+
+          {loading && (
+  <p role="status">Loading your dashboard...</p>
+)}
+
+{!loading && !loadError && (
+  <>
+    {activeSection === "Dashboard" && renderDashboard()}
+    {activeSection === "Appointments" && renderAppointments()}
+    {activeSection === "Patients" && renderPatients()}
+    {activeSection === "Queue" && renderQueue()}
+    {activeSection === "Consultations" && renderConsultations()}
+    {activeSection === "Medical Records" && renderMedicalRecords()}
+    {activeSection === "Notifications" && renderNotifications()}
+  </>
+)}
         </section>
       </main>
     </div>
