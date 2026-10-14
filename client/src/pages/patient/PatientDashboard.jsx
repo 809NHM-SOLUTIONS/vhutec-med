@@ -51,6 +51,28 @@ function formatDateDisplay(dateString) {
   });
 }
 
+function calculateAge(dateString) {
+  if (!dateString) return "";
+
+  const birthDate = new Date(dateString);
+  if (Number.isNaN(birthDate.getTime())) return "";
+
+  const today = new Date();
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+
+  const monthDifference = today.getMonth() - birthDate.getMonth();
+
+  if (
+    monthDifference < 0 ||
+    (monthDifference === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age--;
+  }
+
+  return age;
+}
+
 function statusBadgeClass(status) {
   switch (status) {
     case "CONFIRMED":
@@ -297,36 +319,51 @@ function PatientDashboard() {
 
             <div>
               <h3>{patientFullName}</h3>
-              <p>Patient · ID {patient.id}</p>
+              <p>Patient · ID {patient.patientNumber}</p>
             </div>
           </div>
 
           <div className="profile-information-grid">
-            <div>
-              <span>Full Name</span>
-              <strong>{patientFullName}</strong>
-            </div>
+  <div>
+    <span>Full Name</span>
+    <strong>{patientFullName}</strong>
+  </div>
 
-            <div>
-              <span>Date of Birth</span>
-              <strong>{formatDateDisplay(patient.dob)}</strong>
-            </div>
+  <div>
+    <span>National ID Number</span>
+    <strong>{patient.idNumber}</strong>
+  </div>
 
-            <div>
-              <span>Phone Number</span>
-              <strong>{patient.phone}</strong>
-            </div>
+<div className="profile-detail">
+    <span>Patient Number</span>
+    <strong>{patient.patientNumber || "Not assigned"}</strong>
+</div>
 
-            <div>
-              <span>Email Address</span>
-              <strong>{patient.user?.email}</strong>
-            </div>
+  <div>
+    <span>Date of Birth</span>
+    <strong>{formatDateDisplay(patient.dob)}</strong>
+  </div>
 
-            <div>
-              <span>Address</span>
-              <strong>{patient.address}</strong>
-            </div>
-          </div>
+  <div>
+    <span>Age</span>
+    <strong>{calculateAge(patient.dob)} years</strong>
+  </div>
+
+  <div>
+    <span>Phone Number</span>
+    <strong>{patient.phone}</strong>
+  </div>
+
+  <div>
+    <span>Email Address</span>
+    <strong>{patient.user?.email}</strong>
+  </div>
+
+  <div>
+    <span>Address</span>
+    <strong>{patient.address}</strong>
+  </div>
+</div>
         </div>
       )}
     </section>
@@ -914,7 +951,9 @@ function PatientDashboard() {
                     <span className="section-label">PATIENT PROFILE</span>
                     <h3>{patientFullName}</h3>
                     <p>
-                      Patient ID: <strong>{patient.id}</strong>
+                      
+                        National ID: <strong>{patient.idNumber}</strong>
+                      
                     </p>
                   </div>
 
@@ -922,6 +961,11 @@ function PatientDashboard() {
                     <div>
                       <span>Date of Birth</span>
                       <strong>{formatDateDisplay(patient.dob)}</strong>
+                    </div>
+
+                    <div>
+                      <span>Age</span>
+                      <strong>{calculateAge(patient.dob)} years</strong>
                     </div>
 
                     <div>

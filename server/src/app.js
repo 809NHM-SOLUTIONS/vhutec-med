@@ -41,7 +41,10 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/queue", queueRoutes);
 app.use("/api/consultations", consultationRoutes);
 app.use("/api/receptionists", receptionistRoutes);
+
 app.use("/api/admin/dashboard", adminDashboardRoutes);
+app.use("/api/receptionist", require("./routes/receptionDashboardRoutes"));
+
 
 
 app.get("/api/health", (req, res) => {

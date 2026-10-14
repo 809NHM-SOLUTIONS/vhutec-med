@@ -65,3 +65,16 @@ export const fetchMyAppointments = () =>
 
 export const createAppointment = (payload) =>
   api.post("/appointments", payload).then((res) => res.data);
+
+// ---- Receptionist ----
+export const fetchReceptionOverview = () =>
+  api.get("/receptionist/overview").then((res) => res.data);
+
+export const fetchReceptionAppointments = () =>
+  api.get("/receptionist/appointments").then((res) => res.data);
+
+export const fetchReceptionQueue = () =>
+  api.get("/receptionist/queue").then((res) => res.data);
+
+export const fetchReceptionPatients = (search = "") =>
+  api.get("/receptionist/patients", { params: { search } }).then((res) => res.data);
