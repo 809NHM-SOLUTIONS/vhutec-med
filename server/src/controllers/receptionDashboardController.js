@@ -1,6 +1,4 @@
-// Read-only data for the Receptionist Dashboard.
-// Place in: server/controllers/receptionDashboardController.js
-// (a separate file, so your existing receptionistController.js is untouched)
+
 
 const prisma = require("../prisma");
 
@@ -222,4 +220,219 @@ const getPatients = async (req, res) => {
     }
 };
 
-module.exports = { getOverview, getAppointments, getQueue, getPatients };
+/* ------------------------------------------------------------------ */
+/* Actions: check a patient in, call the next patient                  */
+/* ------------------------------------------------------------------ */
+
+// An error that carries the HTTP status and a message safe to show the user.
+class ActionError extends Error {
+    constructor(status, message) {
+        super(message);
+        this.status = status;
+    }
+}
+
+// Runs a transaction again when the database reports a write conflict
+// (P2034) or a duplicate queue entry (P2002). On the retry the guards below
+// see the new state and answer with a clear message.
+const withRetry = async (work, attempts = 3) => {
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            return await work();
+        } catch (error) {
+            const retryable = error.code === "P2034" || error.code === "P2002";
+            if (!retryable || attempt >= attempts) throw error;
+        }
+    }
+};
+
+const sendActionError = (res, error, fallbackMessage) => {
+    if (error instanceof ActionError) {
+        return res.status(error.status).json({ message: error.message });
+    }
+    if (error.code === "P2002") {
+        return res.status(409).json({
+            message: "This appointment is already in the queue.",
+        });
+    }
+    if (error.code === "P2034") {
+        return res.status(409).json({
+            message: "The queue was busy. Please try again.",
+        });
+    }
+    console.error(`${fallbackMessage}:`, error);
+    return res.status(500).json({ message: fallbackMessage });
+};
+
+const ARRIVED_STATUSES = ["CHECKED_IN", "IN_PROGRESS", "COMPLETED"];
+const CHECK_IN_STATUSES = ["PENDING", "CONFIRMED"];
+
+// POST /api/receptionist/appointments/:id/check-in
+// In ONE transaction: marks the appointment CHECKED_IN, creates its queue
+// entry (WAITING) with the arrival time, and gives it the next queue number
+// for today. Either all of it is saved or none of it.
+const checkInAppointment = async (req, res) => {
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: "Invalid appointment ID" });
+    }
+
+    try {
+        const result = await withRetry(() =>
+            prisma.$transaction(
+                async (tx) => {
+                    const { start, end } = dayRange();
+
+                    const appointment = await tx.appointment.findUnique({
+                        where: { id },
+                        include: {
+                            patient: { select: { firstName: true, lastName: true } },
+                            queue: true,
+                        },
+                    });
+
+                    if (!appointment) {
+                        throw new ActionError(404, "Appointment not found.");
+                    }
+                    if (appointment.date < start || appointment.date >= end) {
+                        throw new ActionError(
+                            400,
+                            "Only today's appointments can be checked in."
+                        );
+                    }
+                    if (appointment.status === "CANCELLED") {
+                        throw new ActionError(
+                            409,
+                            "This appointment was cancelled and cannot be checked in."
+                        );
+                    }
+                    if (appointment.queue || ARRIVED_STATUSES.includes(appointment.status)) {
+                        throw new ActionError(
+                            409,
+                            "This patient has already been checked in."
+                        );
+                    }
+
+                    // Claim the appointment. The status condition makes this
+                    // atomic: if two receptionists click at the same moment,
+                    // only one update matches and the other gets count 0.
+                    const claimed = await tx.appointment.updateMany({
+                        where: { id, status: { in: CHECK_IN_STATUSES } },
+                        data: { status: "CHECKED_IN" },
+                    });
+
+                    if (claimed.count === 0) {
+                        throw new ActionError(
+                            409,
+                            "This appointment was just updated. Refresh and try again."
+                        );
+                    }
+
+                    // Next queue number for today's queue.
+                    const last = await tx.queue.aggregate({
+                        _max: { queueNumber: true },
+                        where: { appointment: { date: { gte: start, lt: end } } },
+                    });
+                    const queueNumber = (last._max.queueNumber || 0) + 1;
+
+                    const queue = await tx.queue.create({
+                        data: {
+                            appointmentId: id,
+                            queueNumber,
+                            status: "WAITING",
+                            checkedInAt: new Date(),
+                        },
+                    });
+
+                    return { patient: appointment.patient, queue };
+                },
+                { isolationLevel: "Serializable" }
+            )
+        );
+
+        res.status(201).json({
+            message: `${fullName(result.patient)} checked in. Queue number ${pad(
+                result.queue.queueNumber
+            )}.`,
+            queueNumber: result.queue.queueNumber,
+            checkedInAt: result.queue.checkedInAt,
+        });
+    } catch (error) {
+        sendActionError(res, error, "Failed to check in the patient");
+    }
+};
+
+// POST /api/receptionist/queue/call-next
+// Calls the patient with the lowest queue number who is still WAITING today:
+// sets the queue status to CALLED and saves the time they were called.
+const callNextPatient = async (req, res) => {
+    try {
+        const result = await withRetry(() =>
+            prisma.$transaction(
+                async (tx) => {
+                    const { start, end } = dayRange();
+
+                    const next = await tx.queue.findFirst({
+                        where: {
+                            status: "WAITING",
+                            appointment: { date: { gte: start, lt: end } },
+                        },
+                        orderBy: [{ queueNumber: "asc" }, { id: "asc" }],
+                        include: {
+                            appointment: {
+                                include: {
+                                    patient: { select: { firstName: true, lastName: true } },
+                                    doctor: { select: { firstName: true, lastName: true } },
+                                },
+                            },
+                        },
+                    });
+
+                    if (!next) {
+                        throw new ActionError(
+                            409,
+                            "There are no patients waiting in the queue."
+                        );
+                    }
+
+                    // Only update the entry if it is still WAITING, so the
+                    // same patient can never be called twice.
+                    const claimed = await tx.queue.updateMany({
+                        where: { id: next.id, status: "WAITING" },
+                        data: { status: "CALLED", calledAt: new Date() },
+                    });
+
+                    if (claimed.count === 0) {
+                        // Someone else called this patient first. Retry, which
+                        // picks the next patient who is still waiting.
+                        const conflict = new Error("Queue entry changed");
+                        conflict.code = "P2034";
+                        throw conflict;
+                    }
+
+                    return next;
+                },
+                { isolationLevel: "Serializable" }
+            )
+        );
+
+        res.json({
+            message: `Called ${fullName(result.appointment.patient)} (queue ${pad(
+                result.queueNumber
+            )}) to see ${`Dr. ${fullName(result.appointment.doctor)}`}.`,
+            queueNumber: result.queueNumber,
+        });
+    } catch (error) {
+        sendActionError(res, error, "Failed to call the next patient");
+    }
+};
+
+module.exports = {
+    getOverview,
+    getAppointments,
+    getQueue,
+    getPatients,
+    checkInAppointment,
+    callNextPatient,
+};

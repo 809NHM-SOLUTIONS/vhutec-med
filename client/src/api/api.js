@@ -81,3 +81,8 @@ export const fetchReceptionPatients = (search = "") =>
 
 export const fetchDoctorDashboard = () =>
     api.get("/doctors/me/dashboard").then(res => res.data);
+export const checkInAppointment = (id) =>
+  api.post(`/receptionist/appointments/${id}/check-in`).then((res) => res.data);
+ 
+export const callNextPatient = () =>
+  api.post("/receptionist/queue/call-next").then((res) => res.data);

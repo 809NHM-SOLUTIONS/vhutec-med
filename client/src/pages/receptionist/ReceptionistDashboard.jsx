@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FiCalendar,
   FiCheckCircle,
@@ -13,6 +13,8 @@ import {
 
 // The api file is src/api/api.js (this page is src/pages/receptionist/).
 import {
+  callNextPatient,
+  checkInAppointment,
   fetchReceptionAppointments,
   fetchReceptionOverview,
   fetchReceptionPatients,
@@ -109,38 +111,87 @@ const getStoredUser = () => {
 /* ---------- data loading ---------- */
 
 // Loads data once, then refreshes it on an interval when one is given.
+// `reload` fetches again straight away (used after an action succeeds or fails).
 const useLiveData = (loader, intervalMs) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const tokenRef = useRef({ cancelled: false });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async (initial) => {
+  const load = useCallback(
+    async (initial, token) => {
       try {
         const result = await loader();
-        if (!cancelled) {
+        if (!token.cancelled) {
           setData(result);
           setError("");
         }
       } catch (err) {
-        if (!cancelled) setError(err.message);
+        if (!token.cancelled) setError(err.message);
       } finally {
-        if (!cancelled && initial) setLoading(false);
+        if (!token.cancelled && initial) setLoading(false);
       }
-    };
+    },
+    [loader]
+  );
 
-    load(true);
-    const timer = intervalMs ? setInterval(() => load(false), intervalMs) : null;
+  useEffect(() => {
+    const token = { cancelled: false };
+    tokenRef.current = token;
+
+    load(true, token);
+    const timer = intervalMs ? setInterval(() => load(false, token), intervalMs) : null;
 
     return () => {
-      cancelled = true;
+      token.cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [loader, intervalMs]);
+  }, [load, intervalMs]);
 
-  return { data, loading, error };
+  const reload = useCallback(() => load(false, tokenRef.current), [load]);
+
+  return { data, loading, error, reload };
+};
+
+// Runs one action at a time (Check In, Call Next) and keeps a message for it:
+// "loading" while it runs, then "success" or "error". The data is reloaded
+// afterwards either way, so the screen always matches the database.
+const NOTICE_COLORS = {
+  loading: "var(--reception-muted)",
+  success: "#0f766e",
+  error: "#b91c1c",
+};
+
+const useAction = (reload) => {
+  const [busyKey, setBusyKey] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const busyRef = useRef(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const run = async (key, loadingText, task) => {
+    if (busyRef.current) return; // ignore double clicks while one action runs
+    busyRef.current = true;
+    clearTimeout(timerRef.current);
+    setBusyKey(key);
+    setNotice({ type: "loading", text: loadingText });
+
+    try {
+      const result = await task();
+      setNotice({ type: "success", text: result?.message || "Done." });
+      timerRef.current = setTimeout(() => setNotice(null), 6000);
+    } catch (err) {
+      setNotice({ type: "error", text: err.message });
+      timerRef.current = setTimeout(() => setNotice(null), 9000);
+    } finally {
+      busyRef.current = false;
+      setBusyKey(null);
+      reload();
+    }
+  };
+
+  return { busyKey, busy: busyKey !== null, notice, run };
 };
 
 /* ---------- small shared components ---------- */
@@ -156,6 +207,37 @@ const DataState = ({ loading, error, data, children }) => {
   }
   return children;
 };
+
+const Notice = ({ notice }) =>
+  notice ? (
+    <p
+      role={notice.type === "error" ? "alert" : "status"}
+      style={{
+        ...stateStyle,
+        color: NOTICE_COLORS[notice.type],
+        fontWeight: 600,
+      }}
+    >
+      {notice.text}
+    </p>
+  ) : null;
+
+const busyStyle = (busy) =>
+  busy ? { opacity: 0.6, cursor: "not-allowed" } : undefined;
+
+const CallNextButton = ({ action, waiting }) => (
+  <button
+    type="button"
+    className="reception-search-button"
+    disabled={action.busy || waiting === 0}
+    style={busyStyle(action.busy || waiting === 0)}
+    onClick={() =>
+      action.run("call-next", "Calling the next patient...", callNextPatient)
+    }
+  >
+    {action.busyKey === "call-next" ? "Calling..." : "Call Next"}
+  </button>
+);
 
 const SectionHeader = ({ title, text }) => (
   <div className="reception-section-header">
@@ -193,6 +275,13 @@ const appointmentStatus = (status) =>
 const queueStatus = (status) =>
   QUEUE_STATUS[status] || { label: status, className: "" };
 
+const formatClock = (value) =>
+  new Date(value).toLocaleTimeString("en-ZA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
 const QueueItem = ({ entry }) => (
   <div className="reception-queue-item">
     <div className="reception-queue-number">
@@ -201,7 +290,11 @@ const QueueItem = ({ entry }) => (
 
     <div className="reception-queue-patient">
       <strong>{entry.patientName}</strong>
-      <span>{entry.doctorName}</span>
+      <span>
+        {entry.doctorName}
+        {entry.checkedInAt ? ` • Arrived ${formatClock(entry.checkedInAt)}` : ""}
+        {entry.calledAt ? ` • Called ${formatClock(entry.calledAt)}` : ""}
+      </span>
     </div>
 
     <span className="reception-queue-status">
@@ -213,7 +306,11 @@ const QueueItem = ({ entry }) => (
 /* ---------- sections ---------- */
 
 const OverviewSection = ({ onNavigate }) => {
-  const { data, loading, error } = useLiveData(fetchReceptionOverview, REFRESH_MS);
+  const { data, loading, error, reload } = useLiveData(
+    fetchReceptionOverview,
+    REFRESH_MS
+  );
+  const action = useAction(reload);
   const [searchTerm, setSearchTerm] = useState("");
 
   const stats = data?.stats;
@@ -274,13 +371,19 @@ const OverviewSection = ({ onNavigate }) => {
                     <p>Current patients waiting for consultation.</p>
                   </div>
 
-                  <button
-                    className="reception-card-link"
-                    onClick={() => onNavigate("Queue")}
-                  >
-                    Manage queue
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <CallNextButton action={action} waiting={stats.waiting} />
+
+                    <button
+                      className="reception-card-link"
+                      onClick={() => onNavigate("Queue")}
+                    >
+                      Manage queue
+                    </button>
+                  </div>
                 </div>
+
+                <Notice notice={action.notice} />
 
                 <div className="reception-queue">
                   {activeQueue.length > 0 ? (
@@ -466,8 +569,10 @@ const OverviewSection = ({ onNavigate }) => {
 };
 
 const AppointmentsSection = () => {
-  const { data, loading, error } = useLiveData(fetchReceptionAppointments, 60000);
+  const { data, loading, error, reload } = useLiveData(fetchReceptionAppointments, 60000);
+  const action = useAction(reload);
   const stats = data?.stats;
+  const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
 
   return (
     <>
@@ -514,6 +619,8 @@ const AppointmentsSection = () => {
                 </div>
               </div>
 
+              <Notice notice={action.notice} />
+
               <div className="reception-table-wrapper">
                 <table className="reception-table">
                   <thead>
@@ -523,6 +630,7 @@ const AppointmentsSection = () => {
                       <th>Doctor</th>
                       <th>Department</th>
                       <th>Status</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
 
@@ -537,11 +645,36 @@ const AppointmentsSection = () => {
                           <td>
                             <StatusBadge status={appointmentStatus(a.status)} />
                           </td>
+                          <td>
+                            {canCheckIn(a) ? (
+                              <button
+                                type="button"
+                                className="reception-search-button"
+                                disabled={action.busy}
+                                style={busyStyle(action.busy)}
+                                onClick={() =>
+                                  action.run(
+                                    `checkin-${a.id}`,
+                                    `Checking in ${a.patientName}...`,
+                                    () => checkInAppointment(a.id)
+                                  )
+                                }
+                              >
+                                {action.busyKey === `checkin-${a.id}`
+                                  ? "Checking in..."
+                                  : "Check In"}
+                              </button>
+                            ) : a.queueNumber ? (
+                              `Queue #${String(a.queueNumber).padStart(2, "0")}`
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={5}>No appointments scheduled for today.</td>
+                        <td colSpan={6}>No appointments scheduled for today.</td>
                       </tr>
                     )}
                   </tbody>
@@ -556,7 +689,11 @@ const AppointmentsSection = () => {
 };
 
 const QueueSection = () => {
-  const { data, loading, error } = useLiveData(fetchReceptionQueue, REFRESH_MS);
+  const { data, loading, error, reload } = useLiveData(
+    fetchReceptionQueue,
+    REFRESH_MS
+  );
+  const action = useAction(reload);
   const stats = data?.stats;
 
   return (
@@ -598,7 +735,11 @@ const QueueSection = () => {
                   <h3>Live Patient Queue</h3>
                   <p>Current queue position and consultation status.</p>
                 </div>
+
+                <CallNextButton action={action} waiting={stats.waiting} />
               </div>
+
+              <Notice notice={action.notice} />
 
               <div className="reception-workspace-list">
                 {data.queue.length > 0 ? (
@@ -716,9 +857,14 @@ const PatientsSection = () => {
 };
 
 const CheckInSection = () => {
-  const { data, loading, error } = useLiveData(fetchReceptionAppointments, 60000);
+  const { data, loading, error, reload } = useLiveData(
+    fetchReceptionAppointments,
+    60000
+  );
+  const action = useAction(reload);
 
   const arrivedStatuses = ["CHECKED_IN", "IN_PROGRESS", "COMPLETED"];
+  const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
   const appointments = (data?.appointments || []).filter(
     (a) => a.status !== "CANCELLED"
   );
@@ -780,6 +926,8 @@ const CheckInSection = () => {
                 </div>
               </div>
 
+              <Notice notice={action.notice} />
+
               <div className="reception-workspace-list">
                 {appointments.length > 0 ? (
                   appointments.map((a) => (
@@ -788,9 +936,35 @@ const CheckInSection = () => {
                         <strong>{a.patientName}</strong>
                         <span>
                           {a.timeSlot} • {a.department} • {a.doctorName}
+                          {a.queueNumber
+                            ? ` • Queue #${String(a.queueNumber).padStart(2, "0")}`
+                            : ""}
                         </span>
                       </div>
-                      <StatusBadge status={arrivalStatus(a)} />
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        {canCheckIn(a) && (
+                          <button
+                            type="button"
+                            className="reception-search-button"
+                            disabled={action.busy}
+                            style={busyStyle(action.busy)}
+                            onClick={() =>
+                              action.run(
+                                `checkin-${a.id}`,
+                                `Checking in ${a.patientName}...`,
+                                () => checkInAppointment(a.id)
+                              )
+                            }
+                          >
+                            {action.busyKey === `checkin-${a.id}`
+                              ? "Checking in..."
+                              : "Check In"}
+                          </button>
+                        )}
+
+                        <StatusBadge status={arrivalStatus(a)} />
+                      </div>
                     </div>
                   ))
                 ) : (
