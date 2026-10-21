@@ -469,10 +469,10 @@ useEffect(() => {
   const renderDashboard = () => (
     <>
       <div className="admin-section-header">
-        <div>
+        {/* <div>
           <h2>Dashboard Overview</h2>
           <p>Monitor Vhutec Med operations and system activity.</p>
-        </div>
+        </div> */}
       </div>
 
 
@@ -2709,7 +2709,7 @@ const renderReports = () => {
             </button>
 
             <div>
-              <span className="admin-header-label">Administrator</span>
+              {/* <span className="admin-header-label">Administrator</span> */}
               <h1>{activeSection}</h1>
             </div>
           </div>

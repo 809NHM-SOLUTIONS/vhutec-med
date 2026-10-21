@@ -395,7 +395,7 @@
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -560,7 +560,7 @@
 
 .appointment-details {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin: 22px 0;
 }
@@ -1692,5 +1692,450 @@
 
   .notification-page-item {
     padding: 17px;
+  }
+}
+
+
+.doctor-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.doctor-cell .doctor-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* =========================
+   PROFILE SUMMARY STRIP
+========================= */
+
+.profile-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 24px;
+  margin-top: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+}
+
+.profile-summary-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 220px;
+}
+
+.profile-summary-avatar {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.profile-summary-identity .section-label {
+  margin-bottom: 4px;
+}
+
+.profile-summary-identity h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.profile-summary-identity p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.profile-summary-stats {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  padding-left: 24px;
+  border-left: 1px solid var(--border);
+}
+
+.profile-summary-stats span {
+  display: block;
+  margin-bottom: 4px;
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.profile-summary-stats strong {
+  display: block;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.profile-summary-action {
+  flex-shrink: 0;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* =========================
+   PROFILE SUMMARY RESPONSIVE
+========================= */
+
+@media (max-width: 900px) {
+  .profile-summary-card {
+    flex-wrap: wrap;
+  }
+
+  .profile-summary-stats {
+    width: 100%;
+    padding-left: 0;
+    padding-top: 16px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .profile-summary-action {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 650px) {
+  .profile-summary-card {
+    padding: 16px 18px;
+    gap: 16px;
+  }
+
+  .profile-summary-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .profile-summary-stats > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .profile-summary-stats span {
+    margin-bottom: 0;
+  }
+
+  .profile-summary-action {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
+
+
+
+/* ================================
+   APPOINTMENTS LIST PAGE
+================================ */
+
+.appointments-list-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  overflow: hidden;
+}
+
+.appointments-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.appointments-list-header h3 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.appointments-list-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.appointments-count-badge {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-radius: 20px;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.appointments-loading {
+  margin: 0;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Table gets consistent horizontal padding with the header */
+.appointments-list-card .appointments-table-wrapper {
+  padding: 0 14px;
+}
+
+/* Empty state */
+.appointments-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 56px 24px;
+}
+
+.appointments-empty-icon {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 26px;
+}
+
+.appointments-empty h4 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.appointments-empty p {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Responsive */
+@media (max-width: 650px) {
+  .appointments-list-header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 18px;
+  }
+
+  .appointments-count-badge {
+    align-self: flex-start;
+  }
+
+  .appointments-empty {
+    padding: 40px 18px;
+  }
+
+  .appointments-list-card .appointments-table-wrapper {
+    padding: 0 6px;
+  }
+}
+
+/* ================================
+   MINI CALENDAR (Dashboard)
+================================ */
+
+
+
+.mini-calendar-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.calendar-header h3 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.calendar-nav {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.calendar-nav button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.calendar-nav button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: #f0fdfa;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.calendar-weekdays span {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 2px 0;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  justify-items: center;   /* centers each circle in its track */
+  /* NOTE: no flex: 1 — the grid must NOT grow to fill the card */
+}
+
+.calendar-day {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;      /* ← rounded highlight */
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  transition: 0.2s ease;
+}
+
+.calendar-day-empty {
+  visibility: hidden;
+}
+
+/* Day that has at least one appointment → solid circular highlight */
+.calendar-day.has-appointment {
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+/* Today with no appointment → circular outline ring */
+.calendar-day.is-today {
+  box-shadow: inset 0 0 0 2px var(--primary);
+  color: var(--primary-dark);
+  font-weight: 800;
+}
+
+/* Today that also has an appointment → darker fill so it still reads as “today” */
+.calendar-day.is-today.has-appointment {
+  background: var(--primary-dark);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.calendar-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendar-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.calendar-legend .legend-appointment {
+  background: var(--primary);
+}
+
+.calendar-legend .legend-today {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+@media (max-width: 650px) {
+  .calendar-day {
+    width: 30px;
+    height: 30px;
+    font-size: 10px;
+  }
+
+  .calendar-nav button {
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
+  }
+
+  .calendar-weekdays span {
+    font-size: 8px;
+  }
+
+  .calendar-legend {
+    gap: 10px;
   }
 }

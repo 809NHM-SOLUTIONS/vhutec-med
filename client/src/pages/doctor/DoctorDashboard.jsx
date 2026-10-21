@@ -777,12 +777,12 @@ const renderNotifications = () => (
 
   const renderDashboard = () => (
     <>
-      <div className="doctor-section-header">
+      {/* <div className="doctor-section-header">
         <h2>Doctor Overview</h2>
         <p>
           Manage today's appointments, patients and clinical activities.
         </p>
-      </div>
+      </div> */}
 
       <section className="doctor-stats">
         <div className="doctor-stat-card">
@@ -1115,15 +1115,14 @@ const renderNotifications = () => (
 
       <main className="doctor-main">
         <header className="doctor-header">
-          <div>
-            <button
-              className="doctor-mobile-menu"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open menu"
-            >
-              <FiMenu />
-            </button>
-          </div>
+        <div className="doctor-header-left">
+          <button
+            className="doctor-mobile-menu"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
+          >
+            <FiMenu />
+          </button>
 
           <div>
             <h1>Doctor Dashboard</h1>
@@ -1131,27 +1130,28 @@ const renderNotifications = () => (
               Welcome back. Manage your clinical activities.
             </p>
           </div>
+        </div>
 
           
-<div className="doctor-profile">
-  <div className="doctor-profile-avatar">
-    {doctor
-      ? getPatientInitials(doctor)
-      : "DR"}
-  </div>
+          <div className="doctor-profile">
+            <div className="doctor-profile-avatar">
+              {doctor
+                ? getPatientInitials(doctor)
+                : "DR"}
+            </div>
 
-  <div className="doctor-profile-info">
-    <strong>
-      {doctor
-        ? `Dr. ${doctor.firstName} ${doctor.lastName}`
-        : "Loading doctor..."}
-    </strong>
+            <div className="doctor-profile-info">
+              <strong>
+                {doctor
+                  ? `Dr. ${doctor.firstName} ${doctor.lastName}`
+                  : "Loading doctor..."}
+              </strong>
 
-    <span>
-      {doctor?.speciality || "Doctor"}
-    </span>
-  </div>
-</div>
+              <span>
+                {doctor?.speciality || "Doctor"}
+              </span>
+            </div>
+          </div>
 
         </header>
 

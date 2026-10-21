@@ -14,6 +14,7 @@ import {
   FiUser,
   FiUsers,
   FiX,
+  FiChevronLeft,
 } from "react-icons/fi";
 
 import {
@@ -97,6 +98,123 @@ function statusLabel(status) {
     .join(" ");
 }
 
+function MiniCalendar({ appointments, month, onMonthChange }) {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+
+  const startWeekday = new Date(year, monthIndex, 1).getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+
+  // Count appointments per day. Uses the raw YYYY-MM-DD slice to avoid
+  // timezone drift from `new Date("2025-01-15")` in negative-offset zones.
+  const countByDay = useMemo(() => {
+    const map = new Map();
+    appointments.forEach((appointment) => {
+      if (!appointment.date) return;
+      const key = String(appointment.date).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return map;
+  }, [appointments]);
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(
+    today.getMonth() + 1
+  ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  const monthLabel = month.toLocaleDateString("en-ZA", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <section className="dashboard-card mini-calendar-card">
+      <div className="calendar-header">
+        <div>
+          <span className="section-label">CALENDAR</span>
+          <h3>{monthLabel}</h3>
+        </div>
+
+        <div className="calendar-nav">
+          <button
+            type="button"
+            onClick={() => onMonthChange(-1)}
+            aria-label="Previous month"
+          >
+            <FiChevronLeft />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMonthChange(1)}
+            aria-label="Next month"
+          >
+            <FiChevronRight />
+          </button>
+        </div>
+      </div>
+
+      <div className="calendar-weekdays">
+        {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+          <span key={index}>{day}</span>
+        ))}
+      </div>
+
+      <div className="calendar-grid">
+        {cells.map((day, index) => {
+          if (day === null) {
+            return (
+              <div
+                key={`empty-${index}`}
+                className="calendar-day calendar-day-empty"
+              />
+            );
+          }
+
+          const key = `${year}-${String(monthIndex + 1).padStart(
+            2,
+            "0"
+          )}-${String(day).padStart(2, "0")}`;
+          const count = countByDay.get(key) || 0;
+          const hasAppointment = count > 0;
+          const isToday = key === todayKey;
+
+          return (
+  <div
+    key={key}
+    className={`calendar-day${hasAppointment ? " has-appointment" : ""}${
+      isToday ? " is-today" : ""
+    }`}
+    title={
+      hasAppointment
+        ? `${count} appointment${count > 1 ? "s" : ""}`
+        : undefined
+    }
+  >
+    <span>{day}</span>
+  </div>
+);
+        })}
+      </div>
+
+      <div className="calendar-legend">
+        <span>
+          <i className="legend-appointment" />
+          Appointment
+        </span>
+        <span>
+          <i className="legend-today" />
+          Today
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function PatientDashboard() {
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -116,6 +234,10 @@ function PatientDashboard() {
   const [appointments, setAppointments] = useState([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(true);
   const [appointmentsError, setAppointmentsError] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+});
 
   const loadProfile = async () => {
     try {
@@ -194,6 +316,13 @@ function PatientDashboard() {
     setActiveSection(label);
     setSidebarOpen(false);
   };
+
+  const handleCalendarMonthChange = (delta) => {
+  setCalendarMonth(
+    (current) =>
+      new Date(current.getFullYear(), current.getMonth() + delta, 1)
+  );
+};
 
   // ---- Booking form ----
   const [appointmentForm, setAppointmentForm] = useState({
@@ -558,7 +687,6 @@ function PatientDashboard() {
                         Dr. {appointment.doctor?.firstName}{" "}
                         {appointment.doctor?.lastName}
                       </strong>
-                      <span>Vhutec Med</span>
                     </div>
                   </div>
                 </td>
@@ -580,19 +708,41 @@ function PatientDashboard() {
     </div>
   );
 
-  const renderMyAppointmentsSection = () => (
-    <section className="dashboard-section">
-      <div className="section-page-header">
-        <h2>My Appointments</h2>
-        <p>View and manage your upcoming and scheduled appointments.</p>
+ const renderMyAppointmentsSection = () => (
+  <section className="dashboard-section">
+    <div className="section-page-header">
+      <h2>My Appointments</h2>
+      <p>View and manage your upcoming and scheduled appointments.</p>
+    </div>
+
+    <div className="appointments-list-card">
+      <div className="appointments-list-header">
+        <div>
+          <h3>Scheduled Appointments</h3>
+          <p>Your current appointments with Vhutec Med.</p>
+        </div>
+
+        {!appointmentsLoading && !appointmentsError && (
+          <span className="appointments-count-badge">
+            {upcomingAppointments.length}{" "}
+            {upcomingAppointments.length === 1
+              ? "appointment"
+              : "appointments"}
+          </span>
+        )}
       </div>
 
-      <div className="appointments-list-card">
-        <div className="appointments-list-header">
-          <div>
-            <h3>Scheduled Appointments</h3>
-            <p>Your current appointments with Vhutec Med.</p>
+      {appointmentsLoading ? (
+        <p className="appointments-loading">Loading appointments...</p>
+      ) : appointmentsError ? (
+        <div className="auth-error">{appointmentsError}</div>
+      ) : upcomingAppointments.length === 0 ? (
+        <div className="appointments-empty">
+          <div className="appointments-empty-icon">
+            <FiCalendar />
           </div>
+          <h4>No upcoming appointments</h4>
+          <p>You don't have any scheduled appointments yet.</p>
           <button
             type="button"
             className="primary-button"
@@ -602,17 +752,12 @@ function PatientDashboard() {
             Book Appointment
           </button>
         </div>
-
-        {appointmentsLoading ? (
-          <p>Loading appointments...</p>
-        ) : appointmentsError ? (
-          <div className="auth-error">{appointmentsError}</div>
-        ) : (
-          renderAppointmentsTable(upcomingAppointments)
-        )}
-      </div>
-    </section>
-  );
+      ) : (
+        renderAppointmentsTable(upcomingAppointments)
+      )}
+    </div>
+  </section>
+);
 
   const renderAppointmentHistorySection = () => (
     <section className="dashboard-section">
@@ -766,10 +911,10 @@ function PatientDashboard() {
             </button>
 
             <div>
-              <p className="header-label">Patient Dashboard</p>
+              {/* <p className="header-label">Patient Dashboard</p>
               <h1>
                 Good day{patient ? `, ${patient.firstName}` : ""} 👋
-              </h1>
+              </h1> */}
             </div>
           </div>
 
@@ -916,6 +1061,12 @@ function PatientDashboard() {
                       <FiChevronRight />
                     </button>
                   </section>
+
+                   <MiniCalendar
+                    appointments={upcomingAppointments}
+                    month={calendarMonth}
+                    onMonthChange={handleCalendarMonthChange}
+                  />
                 </div>
               )}
 
@@ -941,7 +1092,7 @@ function PatientDashboard() {
                 )}
               </section>
 
-              {patient && (
+              {/* {patient && (
                 <section className="profile-summary-card">
                   <div className="profile-summary-avatar">
                     {patientInitials}
@@ -982,7 +1133,47 @@ function PatientDashboard() {
                     <FiChevronRight />
                   </button>
                 </section>
-              )}
+              )} */}
+
+              {patient && (
+  <section className="profile-summary-card">
+    <div className="profile-summary-identity">
+      <div className="profile-summary-avatar">{patientInitials}</div>
+
+      <div>
+        <span className="section-label">PATIENT PROFILE</span>
+        <h3>{patientFullName}</h3>
+        <p>Patient No. {patient.patientNumber || "—"}</p>
+      </div>
+    </div>
+
+    <div className="profile-summary-stats">
+      <div>
+        <span>Date of Birth</span>
+        <strong>{formatDateDisplay(patient.dob)}</strong>
+      </div>
+
+      <div>
+        <span>Age</span>
+        <strong>{calculateAge(patient.dob)} years</strong>
+      </div>
+
+      <div>
+        <span>Phone</span>
+        <strong>{patient.phone}</strong>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      className="text-button profile-summary-action"
+      onClick={() => handleNavigation("My Profile")}
+    >
+      View Profile
+      <FiChevronRight />
+    </button>
+  </section>
+)}
             </>
           )}
         </section>

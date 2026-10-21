@@ -324,10 +324,10 @@ const OverviewSection = ({ onNavigate }) => {
 
   return (
     <>
-      <SectionHeader
+      {/* <SectionHeader
         title="Reception Overview"
         text="Manage today's appointments, patient check-ins and the hospital queue."
-      />
+      /> */}
 
       <DataState loading={loading} error={error} data={data}>
         {data && (
@@ -1056,7 +1056,7 @@ const ReceptionistDashboard = () => {
 
       <main className="reception-main">
         <header className="reception-header">
-          <div>
+          <div className="reception-header-left">
             <button
               className="reception-mobile-menu"
               onClick={() => setSidebarOpen(true)}
@@ -1064,11 +1064,11 @@ const ReceptionistDashboard = () => {
             >
               <FiMenu />
             </button>
-          </div>
 
-          <div>
-            <h1>Receptionist Dashboard</h1>
-            <p>Welcome back. Manage today's hospital reception activities.</p>
+            <div>
+              <h1>Receptionist Dashboard</h1>
+              <p>Welcome back. Manage today's hospital reception activities.</p>
+            </div>
           </div>
 
           <div className="reception-profile">
