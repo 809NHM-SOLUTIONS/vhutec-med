@@ -30,6 +30,20 @@ enum QueueStatus {
   COMPLETED
 }
 
+enum NotificationType {
+  APPOINTMENT_BOOKED
+  APPOINTMENT_CONFIRMED
+  APPOINTMENT_RESCHEDULED
+  APPOINTMENT_CANCELLED
+  APPOINTMENT_REMINDER
+  PATIENT_CHECKED_IN
+  QUEUE_UPDATED
+  PATIENT_CALLED
+  CONSULTATION_STARTED
+  CONSULTATION_COMPLETED
+  APPOINTMENT_CONFLICT
+}
+
 
 model User {
   id                        Int       @id @default(autoincrement())
@@ -52,6 +66,8 @@ model User {
   patient                   Patient?
   doctor                    Doctor?
   receptionist              Receptionist?
+
+  notifications Notification[]
 
   @@map("users")
 }
@@ -150,6 +166,8 @@ model Appointment {
   queue        Queue?
   consultation Consultation?
 
+  notifications Notification[]
+
   @@map("appointments")
 }
 
@@ -181,4 +199,25 @@ model Consultation {
   doctor      Doctor      @relation(fields: [doctorId], references: [id])
 
   @@map("consultation")
+}
+
+model Notification {
+  id            Int              @id @default(autoincrement())
+  userId        Int              @map("user_id")
+  appointmentId Int?             @map("appointment_id")
+  type          NotificationType
+  title         String
+  message       String
+  data          Json?
+  dedupeKey     String?          @unique @map("dedupe_key")
+  readAt        DateTime?        @map("read_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
+  @@index([appointmentId])
+  @@map("notifications")
 }

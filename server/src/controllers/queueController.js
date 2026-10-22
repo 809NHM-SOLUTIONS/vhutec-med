@@ -1,9 +1,52 @@
 const prisma = require("../prisma");
 
+const {
+    notifyQueueEvent
+} = require("../services/queueNotifications");
+
+const getDoctorIdForUser = async (userId) => {
+    const doctor = await prisma.doctor.findUnique({
+        where: { userId },
+        select: { id: true }
+    });
+
+    return doctor?.id ?? null;
+};
+
+const VALID_QUEUE_STATUSES = [
+    "WAITING",
+    "CALLED",
+    "IN_CONSULTATION",
+    "COMPLETED"
+];
+
+
 // GET /api/queue
 const getQueues = async (req, res) => {
     try {
+        let where = {};
+
+        if (req.user.role === "DOCTOR") {
+            const doctorId = await getDoctorIdForUser(
+                Number(req.user.userId)
+            );
+
+            if (!doctorId) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Doctor profile not found"
+                });
+            }
+
+            where = {
+                appointment: {
+                    doctorId
+                }
+            };
+        }
+
         const queues = await prisma.queue.findMany({
+            where,
             include: {
                 appointment: {
                     include: {
@@ -13,25 +56,22 @@ const getQueues = async (req, res) => {
                     }
                 }
             },
-            orderBy: {
-                id: "asc"
-            }
+            orderBy: { id: "asc" }
         });
 
-        res.json({
+        return res.json({
             success: true,
             data: queues
         });
     } catch (error) {
         console.error("Get queues error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to retrieve queues"
         });
     }
 };
-
 
 // GET /api/queue/:id
 const getQueueById = async (req, res) => {
@@ -65,6 +105,19 @@ const getQueueById = async (req, res) => {
             });
         }
 
+        if (req.user.role === "DOCTOR") {
+    const doctorId = await getDoctorIdForUser(
+        Number(req.user.userId)
+    );
+
+    if (!doctorId || queue.appointment.doctorId !== doctorId) {
+        return res.status(403).json({
+            success: false,
+            message: "You do not have access to this queue record"
+        });
+    }
+}
+
         res.json({
             success: true,
             data: queue
@@ -92,26 +145,27 @@ const createQueue = async (req, res) => {
         const parsedAppointmentId = Number(appointmentId);
         const parsedQueueNumber = Number(queueNumber);
 
-        if (Number.isNaN(parsedAppointmentId)) {
+        if (!Number.isInteger(parsedAppointmentId) || parsedAppointmentId <= 0) {
+    return res.status(400).json({
+        success: false,
+        message: "appointmentId must be a positive integer"
+    });
+}
+
+        if (!Number.isInteger(parsedQueueNumber) || parsedQueueNumber <= 0) {
             return res.status(400).json({
                 success: false,
-                message: "appointmentId must be a valid number"
+                message: "queueNumber must be a positive integer"
             });
         }
 
-        if (Number.isNaN(parsedQueueNumber)) {
+        if (!VALID_QUEUE_STATUSES.includes(status)) {
             return res.status(400).json({
                 success: false,
-                message: "queueNumber must be a valid number"
+                message: "Invalid queue status"
             });
         }
-
-        if (!status) {
-            return res.status(400).json({
-                success: false,
-                message: "status is required"
-            });
-        }
+        
 
         const appointment = await prisma.appointment.findUnique({
             where: {
@@ -205,13 +259,22 @@ const updateQueue = async (req, res) => {
                 ? Number(queueNumber)
                 : existingQueue.queueNumber;
 
-        if (Number.isNaN(parsedQueueNumber)) {
-            return res.status(400).json({
-                success: false,
-                message: "queueNumber must be a valid number"
-            });
-        }
+        if (!Number.isInteger(parsedQueueNumber) || parsedQueueNumber <= 0) {
+    return res.status(400).json({
+        success: false,
+        message: "queueNumber must be a positive integer"
+    });
+}
 
+if (
+    status !== undefined &&
+    !VALID_QUEUE_STATUSES.includes(status)
+) {
+    return res.status(400).json({
+        success: false,
+        message: "Invalid queue status"
+    });
+}
         let parsedCheckedInAt = existingQueue.checkedInAt;
         let parsedCalledAt = existingQueue.calledAt;
 
@@ -272,6 +335,31 @@ const updateQueue = async (req, res) => {
                 }
             }
         });
+
+        // Notify when a patient checks in for the first time.
+if (!existingQueue.checkedInAt && queue.checkedInAt) {
+    await notifyQueueEvent({
+        queue,
+        type: "PATIENT_CHECKED_IN",
+        eventKey: `queue-checked-in:${queue.id}`
+    });
+}
+
+// Notify when the queue status genuinely changes.
+if (existingQueue.status !== queue.status) {
+    const type =
+        queue.status === "CALLED"
+            ? "PATIENT_CALLED"
+            : "QUEUE_UPDATED";
+
+    await notifyQueueEvent({
+        queue,
+        type,
+        eventKey: queue.status === "CALLED" && queue.calledAt
+    ? `queue-called:${queue.id}:${queue.calledAt.toISOString()}`
+    : `queue-status:${queue.id}:${queue.status}`
+    });
+}
 
         res.json({
             success: true,

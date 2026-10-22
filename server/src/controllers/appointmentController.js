@@ -1,4 +1,6 @@
 const prisma = require("../prisma");
+const { notifyAppointmentStakeholders } = require("../services/appointmentNotifications");
+
 
 // GET /api/appointments
 const getAppointments = async (req, res) => {
@@ -116,6 +118,40 @@ const getAppointmentById = async (req, res) => {
                 message: "Appointment not found"
             });
         }
+
+        const role = req.user?.role;
+const userId = Number(req.user?.userId);
+
+if (role === "PATIENT") {
+    const patient = await prisma.patient.findUnique({
+        where: { userId },
+        select: { id: true }
+    });
+
+    if (!patient || patient.id !== appointment.patientId) {
+        return res.status(403).json({
+            success: false,
+            message: "You are not allowed to view this appointment"
+        });
+    }
+} else if (role === "DOCTOR") {
+    const doctor = await prisma.doctor.findUnique({
+        where: { userId },
+        select: { id: true }
+    });
+
+    if (!doctor || doctor.id !== appointment.doctorId) {
+        return res.status(403).json({
+            success: false,
+            message: "You are not allowed to view this appointment"
+        });
+    }
+} else if (!["ADMIN", "RECEPTIONIST"].includes(role)) {
+    return res.status(403).json({
+        success: false,
+        message: "You are not allowed to view this appointment"
+    });
+}
 
         res.json({
             success: true,
@@ -253,6 +289,48 @@ const createAppointment = async (req, res) => {
             });
         }
 
+
+        
+
+
+        // Prevent a doctor from receiving overlapping active appointments.
+        // Prevent double-booking for the same doctor, date and time slot.
+const dayStart = new Date(
+    Date.UTC(
+        appointmentDate.getUTCFullYear(),
+        appointmentDate.getUTCMonth(),
+        appointmentDate.getUTCDate()
+    )
+);
+
+const nextDayStart = new Date(dayStart);
+nextDayStart.setUTCDate(nextDayStart.getUTCDate() + 1);
+
+const conflictingAppointment = await prisma.appointment.findFirst({
+    where: {
+        doctorId: parsedDoctorId,
+        date: {
+            gte: dayStart,
+            lt: nextDayStart
+        },
+        timeSlot,
+        status: {
+            not: "CANCELLED"
+        }
+    },
+    select: {
+        id: true
+    }
+});
+
+if (conflictingAppointment) {
+    return res.status(409).json({
+        success: false,
+        message:
+            "This doctor already has an appointment for the selected date and time."
+    });
+}
+
         const appointment = await prisma.appointment.create({
             data: {
                 patientId: parsedPatientId,
@@ -269,6 +347,19 @@ const createAppointment = async (req, res) => {
                 department: true
             }
         });
+
+        await notifyAppointmentStakeholders({
+    appointment,
+    type: appointment.status === "CONFIRMED"
+        ? "APPOINTMENT_CONFIRMED"
+        : "APPOINTMENT_BOOKED",
+    title: appointment.status === "CONFIRMED"
+        ? "Appointment confirmed"
+        : "New appointment booked",
+    message: `Appointment scheduled for ${appointment.date.toISOString().slice(0, 10)} at ${appointment.timeSlot}.`,
+    eventKey: `appointment-booked:${appointment.id}`
+});
+
 
         res.status(201).json({
             success: true,
@@ -401,6 +492,55 @@ const updateAppointment = async (req, res) => {
             });
         }
 
+        const effectiveTimeSlot =
+    timeSlot !== undefined
+        ? timeSlot
+        : existingAppointment.timeSlot;
+
+// Check the selected calendar day.
+const dayStart = new Date(
+    Date.UTC(
+        appointmentDate.getUTCFullYear(),
+        appointmentDate.getUTCMonth(),
+        appointmentDate.getUTCDate()
+    )
+);
+
+const nextDayStart = new Date(dayStart);
+nextDayStart.setUTCDate(nextDayStart.getUTCDate() + 1);
+
+// Don't check conflicts when the appointment is being cancelled.
+const effectiveStatus =
+    status !== undefined ? status : existingAppointment.status;
+
+if (effectiveStatus !== "CANCELLED") {
+    const conflictingAppointment = await prisma.appointment.findFirst({
+        where: {
+            id: { not: id },
+            doctorId: parsedDoctorId,
+            date: {
+                gte: dayStart,
+                lt: nextDayStart
+            },
+            timeSlot: effectiveTimeSlot,
+            status: {
+                not: "CANCELLED"
+            }
+        },
+        select: {
+            id: true
+        }
+    });
+
+    if (conflictingAppointment) {
+        return res.status(409).json({
+            success: false,
+            message:
+                "This doctor already has an appointment for the selected date and time."
+        });
+    }
+}
+
         const appointment = await prisma.appointment.update({
             where: { id },
 
@@ -409,10 +549,7 @@ const updateAppointment = async (req, res) => {
                 doctorId: parsedDoctorId,
                 departmentId: parsedDepartmentId,
                 date: appointmentDate,
-                timeSlot:
-                    timeSlot !== undefined
-                        ? timeSlot
-                        : existingAppointment.timeSlot,
+                timeSlot: effectiveTimeSlot,
                 reason:
                     reason !== undefined
                         ? reason
@@ -430,6 +567,50 @@ const updateAppointment = async (req, res) => {
             }
         });
 
+        const scheduleChanged =
+    existingAppointment.date.getTime() !== appointment.date.getTime() ||
+    existingAppointment.timeSlot !== appointment.timeSlot ||
+    existingAppointment.doctorId !== appointment.doctorId ||
+    existingAppointment.departmentId !== appointment.departmentId;
+
+const statusChanged = existingAppointment.status !== appointment.status;
+
+let notificationEvent = null;
+
+if (
+    appointment.status === "CANCELLED" &&
+    existingAppointment.status !== "CANCELLED"
+) {
+    notificationEvent = {
+        type: "APPOINTMENT_CANCELLED",
+        title: "Appointment cancelled",
+        message: "An appointment has been cancelled."
+    };
+} else if (scheduleChanged) {
+    notificationEvent = {
+        type: "APPOINTMENT_RESCHEDULED",
+        title: "Appointment rescheduled",
+        message: `The appointment schedule has changed to ${appointment.date.toISOString().slice(0, 10)} at ${appointment.timeSlot}.`
+    };
+} else if (
+    statusChanged &&
+    appointment.status === "CONFIRMED"
+) {
+    notificationEvent = {
+        type: "APPOINTMENT_CONFIRMED",
+        title: "Appointment confirmed",
+        message: `Appointment is confirmed for ${appointment.date.toISOString().slice(0, 10)} at ${appointment.timeSlot}.`
+    };
+}
+
+if (notificationEvent) {
+    await notifyAppointmentStakeholders({
+        appointment,
+        ...notificationEvent,
+        eventKey: `appointment-update:${appointment.id}:${appointment.updatedAt.toISOString()}`
+    });
+}
+
         res.json({
             success: true,
             data: appointment
@@ -445,11 +626,12 @@ const updateAppointment = async (req, res) => {
 };
 
 // DELETE /api/appointments/:id
+
 const deleteAppointment = async (req, res) => {
     try {
         const id = Number(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!Number.isInteger(id) || id <= 0) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid appointment ID"
@@ -467,20 +649,37 @@ const deleteAppointment = async (req, res) => {
             });
         }
 
-        await prisma.appointment.delete({
-            where: { id }
+        if (existingAppointment.status === "CANCELLED") {
+            return res.json({
+                success: true,
+                message: "Appointment is already cancelled"
+            });
+        }
+
+        const appointment = await prisma.appointment.update({
+            where: { id },
+            data: { status: "CANCELLED" }
         });
 
-        res.json({
+        await notifyAppointmentStakeholders({
+            appointment,
+            type: "APPOINTMENT_CANCELLED",
+            title: "Appointment cancelled",
+            message: "An appointment has been cancelled.",
+            eventKey: `appointment-cancelled:${appointment.id}`
+        });
+
+        return res.json({
             success: true,
-            message: "Appointment deleted successfully"
+            message: "Appointment cancelled successfully",
+            data: appointment
         });
     } catch (error) {
-        console.error("Delete appointment error:", error);
+        console.error("Cancel appointment error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
-            message: "Failed to delete appointment"
+            message: "Failed to cancel appointment"
         });
     }
 };

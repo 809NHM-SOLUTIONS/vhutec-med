@@ -1,9 +1,41 @@
 const prisma = require("../prisma");
+const {
+    notifyConsultationEvent
+} = require("../services/consultationNotifications");
 
+
+const getDoctorIdForUser = async (userId) => {
+    const doctor = await prisma.doctor.findUnique({
+        where: { userId: Number(userId) },
+        select: { id: true }
+    });
+
+    return doctor?.id ?? null;
+};
+
+// GET /api/consultations
 // GET /api/consultations
 const getConsultations = async (req, res) => {
     try {
+        let where = {};
+
+        if (req.user.role === "DOCTOR") {
+            const doctorId = await getDoctorIdForUser(
+                req.user.userId
+            );
+
+            if (!doctorId) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Doctor profile not found"
+                });
+            }
+
+            where = { doctorId };
+        }
+
         const consultations = await prisma.consultation.findMany({
+            where,
             include: {
                 appointment: {
                     include: {
@@ -14,25 +46,22 @@ const getConsultations = async (req, res) => {
                 },
                 doctor: true
             },
-            orderBy: {
-                id: "asc"
-            }
+            orderBy: { id: "asc" }
         });
 
-        res.json({
+        return res.json({
             success: true,
             data: consultations
         });
     } catch (error) {
         console.error("Get consultations error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to retrieve consultations"
         });
     }
 };
-
 
 // GET /api/consultations/:id
 const getConsultationById = async (req, res) => {
@@ -66,6 +95,23 @@ const getConsultationById = async (req, res) => {
                 message: "Consultation not found"
             });
         }
+
+        if (req.user.role === "DOCTOR") {
+    const doctorId = await getDoctorIdForUser(
+        req.user.userId
+    );
+
+    if (
+        !doctorId ||
+        consultation.doctorId !== doctorId ||
+        consultation.appointment.doctorId !== doctorId
+    ) {
+        return res.status(403).json({
+            success: false,
+            message: "You do not have access to this consultation"
+        });
+    }
+}
 
         res.json({
             success: true,
@@ -130,6 +176,29 @@ const createConsultation = async (req, res) => {
             });
         }
 
+        if (req.user.role === "DOCTOR") {
+    const authenticatedDoctorId = await getDoctorIdForUser(
+        req.user.userId
+    );
+
+    if (!authenticatedDoctorId) {
+        return res.status(403).json({
+            success: false,
+            message: "Doctor profile not found"
+        });
+    }
+
+    if (
+        parsedDoctorId !== authenticatedDoctorId ||
+        appointment.doctorId !== authenticatedDoctorId
+    ) {
+        return res.status(403).json({
+            success: false,
+            message: "You can only create consultations for your assigned appointments"
+        });
+    }
+}
+
         // Check doctor
         const doctor = await prisma.doctor.findUnique({
             where: {
@@ -167,9 +236,21 @@ const createConsultation = async (req, res) => {
             });
         }
 
-        // Parse optional dates
-        let parsedStartedAt = null;
-        let parsedCompletedAt = null;
+       // Consultations must be created before they are started or completed.
+// These timestamps are set later through updateConsultation.
+        if (
+            (startedAt !== undefined && startedAt !== null && startedAt !== "") ||
+            (completedAt !== undefined && completedAt !== null && completedAt !== "")
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Create the consultation first, then update it when it starts or completes."
+            });
+        }
+
+        const parsedStartedAt = null;
+        const parsedCompletedAt = null;
 
         if (startedAt !== undefined && startedAt !== null && startedAt !== "") {
             parsedStartedAt = new Date(startedAt);
@@ -254,6 +335,46 @@ const updateConsultation = async (req, res) => {
                 message: "Consultation not found"
             });
         }
+
+        if (req.user.role === "DOCTOR") {
+    const authenticatedDoctorId = await getDoctorIdForUser(
+        req.user.userId
+    );
+
+    if (!authenticatedDoctorId) {
+        return res.status(403).json({
+            success: false,
+            message: "Doctor profile not found"
+        });
+    }
+
+    if (existingConsultation.doctorId !== authenticatedDoctorId) {
+        return res.status(403).json({
+            success: false,
+            message: "You can only update your own consultations"
+        });
+    }
+
+    if (
+        req.body.doctorId !== undefined &&
+        Number(req.body.doctorId) !== authenticatedDoctorId
+    ) {
+        return res.status(403).json({
+            success: false,
+            message: "You cannot reassign a consultation to another doctor"
+        });
+    }
+
+    if (
+        req.body.appointmentId !== undefined &&
+        Number(req.body.appointmentId) !== existingConsultation.appointmentId
+    ) {
+        return res.status(403).json({
+            success: false,
+            message: "You cannot change the appointment linked to a consultation"
+        });
+    }
+}
 
         const {
             appointmentId,
@@ -389,6 +510,44 @@ const updateConsultation = async (req, res) => {
             }
         }
 
+        
+        // A consultation must start before it can be completed.
+        if (parsedCompletedAt && !parsedStartedAt) {
+            return res.status(400).json({
+                success: false,
+                message: "A consultation must be started before it can be completed"
+            });
+        }
+
+        // Completion cannot occur before the start time.
+        if (
+            parsedStartedAt &&
+            parsedCompletedAt &&
+            parsedCompletedAt < parsedStartedAt
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "completedAt cannot be earlier than startedAt"
+            });
+        }
+
+        // Once a consultation starts, its start timestamp cannot be cleared.
+        if (existingConsultation.startedAt && !parsedStartedAt) {
+            return res.status(400).json({
+                success: false,
+                message: "A started consultation cannot have its start time cleared"
+            });
+        }
+
+        // Once completed, a consultation cannot be reopened by clearing its completion time.
+        if (existingConsultation.completedAt && !parsedCompletedAt) {
+            return res.status(400).json({
+                success: false,
+                message: "A completed consultation cannot be reopened"
+            });
+        }
+
+
         const consultation =
             await prisma.consultation.update({
                 where: { id },
@@ -417,6 +576,30 @@ const updateConsultation = async (req, res) => {
                     doctor: true
                 }
             });
+
+            // Notify only when the consultation first starts.
+if (
+    !existingConsultation.startedAt &&
+    parsedStartedAt
+) {
+    await notifyConsultationEvent({
+        consultation,
+        type: "CONSULTATION_STARTED",
+        eventKey: `consultation-started:${consultation.id}`
+    });
+}
+
+// Notify only when the consultation first completes.
+if (
+    !existingConsultation.completedAt &&
+    parsedCompletedAt
+) {
+    await notifyConsultationEvent({
+        consultation,
+        type: "CONSULTATION_COMPLETED",
+        eventKey: `consultation-completed:${consultation.id}`
+    });
+}
 
         res.json({
             success: true,

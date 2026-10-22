@@ -24,6 +24,16 @@ const consultationRoutes = require("./routes/consultationRoutes");
 const receptionistRoutes = require("./routes/receptionistRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
 
+const { createServer } = require("http");
+const { initializeNotificationSocket } = require("./sockets/notification.socket");
+const notificationRoutes = require("./routes/notificationRoutes");
+const {
+    startAppointmentReminderService
+} = require("./services/appointmentReminderService");
+
+
+
+
 const app = express();
 
 app.use(cors());
@@ -44,8 +54,7 @@ app.use("/api/receptionists", receptionistRoutes);
 
 app.use("/api/admin/dashboard", adminDashboardRoutes);
 app.use("/api/receptionist", require("./routes/receptionDashboardRoutes"));
-
-
+app.use("/api/notifications", notificationRoutes);
 
 app.get("/api/health", (req, res) => {
     res.json({
@@ -82,12 +91,14 @@ const startServer = async () => {
 
         await initializeDefaultAdmin();
 
-        app.listen(PORT, () => {
-            console.log(
-                `Vhutec Med server running on http://localhost:${PORT}`
-            );
-        });
+        const httpServer = createServer(app);
+        initializeNotificationSocket(httpServer);
 
+        startAppointmentReminderService();
+
+        httpServer.listen(PORT, () => {
+            console.log(`Vhutec Med server running on http://localhost:${PORT}`);
+        });
     } catch (error) {
         console.error("Failed to start Vhutec Med server:", error);
         process.exit(1);

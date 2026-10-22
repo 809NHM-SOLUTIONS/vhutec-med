@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -14,16 +15,20 @@ const roleGuard = require("../middleware/roleGuard");
 
 const router = express.Router();
 
-// IMPORTANT: "/me" must be registered BEFORE "/:id",
-// otherwise Express matches "me" as the :id param.
+// Keep /me before /:id.
 router.get("/me", authenticate, roleGuard("PATIENT"), getMyAppointments);
 
-router.get("/", getAppointments);
-router.get("/:id", getAppointmentById);
+// Only staff roles can retrieve the full appointment list.
+router.get(
+    "/",
+    authenticate,
+    roleGuard("ADMIN", "RECEPTIONIST", "DOCTOR"),
+    getAppointments
+);
 
-// Booking must be authenticated so createAppointment can securely derive
-// the patient from req.user when the caller is a PATIENT. Also open to
-// ADMIN/RECEPTIONIST, who pass patientId explicitly in the body.
+// Individual appointment access must also be checked in the controller.
+router.get("/:id", authenticate, getAppointmentById);
+
 router.post(
     "/",
     authenticate,
@@ -31,7 +36,18 @@ router.post(
     createAppointment
 );
 
-router.put("/:id", updateAppointment);
-router.delete("/:id", deleteAppointment);
+router.put(
+    "/:id",
+    authenticate,
+    roleGuard("ADMIN", "RECEPTIONIST"),
+    updateAppointment
+);
+
+router.delete(
+    "/:id",
+    authenticate,
+    roleGuard("ADMIN", "RECEPTIONIST"),
+    deleteAppointment
+);
 
 module.exports = router;
