@@ -86,10 +86,10 @@ export const checkInAppointment = (id) =>
  
 export const callNextPatient = () =>
   api.post("/receptionist/queue/call-next").then((res) => res.data);
-<<<<<<< HEAD
+
    export const fetchMyQueue = () =>
      api.get("/patients/me/queue").then((res) => res.data);
-=======
+
 
 
 // ---- Notifications ----
@@ -101,4 +101,3 @@ export const fetchUnreadNotificationCount = () =>
 
 export const markNotificationAsRead = (id) =>
   api.patch(`/notifications/${id}/read`).then((res) => res.data);
->>>>>>> 350448de1cbdbb29be1cd90c5e82f2c0798c952e
