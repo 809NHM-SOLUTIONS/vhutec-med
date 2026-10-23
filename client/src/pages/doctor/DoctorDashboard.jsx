@@ -1,5 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchDoctorDashboard } from "../../api/api";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  fetchDoctorDashboard,
+  fetchNotifications,
+  fetchUnreadNotificationCount,
+  markNotificationAsRead,
+} from "../../api/api";
+import { io } from "socket.io-client";
 import {
   FiActivity,
   FiCalendar,
@@ -12,19 +24,40 @@ import {
   FiMessageSquare,
   FiUserCheck,
   FiUsers,
+  FiBell,
 } from "react-icons/fi";
 
 import "./DoctorDashboard.css";
+
+import useNotifications from "../../components/notifications/useNotifications";
+import NotificationBell from "../../components/notifications/NotificationBell";
 
 const DoctorDashboard = () => {
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  
+
   const [doctor, setDoctor] = useState(null);
   const [appointmentsData, setAppointmentsData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  const [notifications, setNotifications] = useState([]);
+const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+const [notificationsLoading, setNotificationsLoading] = useState(false);
+const [notificationsError, setNotificationsError] = useState("");
+
+const [notificationDropdownOpen, setNotificationDropdownOpen] =
+  useState(false);
+
+const notificationDropdownRef = useRef(null);
+
+//   const [notificationDropdownOpen, setNotificationDropdownOpen] =
+//   useState(false);
+
+// const notificationDropdownRef = useRef(null);
+
+
 
   useEffect(() => {
     let active = true;
@@ -203,10 +236,10 @@ const DoctorDashboard = () => {
     { label: "Queue", icon: FiClock },
     { label: "Consultations", icon: FiUserCheck },
     { label: "Medical Records", icon: FiFileText },
-    { label: "Notifications", icon: FiMessageSquare },
+    { label: "Notifications", icon: FiBell },
   ];
 
-  
+
 
   const handleNavigation = (label) => {
     setActiveSection(label);
@@ -219,7 +252,7 @@ const DoctorDashboard = () => {
     window.location.href = "/login";
   };
 
- 
+
   const renderAppointments = () => (
     <>
       <div className="doctor-section-header">
@@ -457,15 +490,15 @@ const DoctorDashboard = () => {
                 <div>
                   <strong>
                     #{String(appointment.queue.queueNumber).padStart(2, "0")}
-                    {" • "}
+                    {" â€¢ "}
                     {getPatientName(appointment.patient)}
                   </strong>
 
                   <span>
                     {getFileNumber(appointment.patient)}
-                    {" • "}
+                    {" â€¢ "}
                     {appointment.reason || "No reason provided"}
-                    {" • "}
+                    {" â€¢ "}
                     {getAppointmentTime(appointment)}
                   </span>
                 </div>
@@ -552,7 +585,7 @@ const renderConsultations = () => (
           <div className="doctor-workspace-row">
             <div>
               <strong>Sarah Mthembu</strong>
-              <span>VH-2026-00411 • Respiratory consultation</span>
+              <span>VH-2026-00411 â€¢ Respiratory consultation</span>
             </div>
             <span className="doctor-status confirmed">Completed</span>
           </div>
@@ -560,7 +593,7 @@ const renderConsultations = () => (
           <div className="doctor-workspace-row">
             <div>
               <strong>David Ndlovu</strong>
-              <span>VH-2026-00405 • Follow-up consultation</span>
+              <span>VH-2026-00405 â€¢ Follow-up consultation</span>
             </div>
             <span className="doctor-status confirmed">Completed</span>
           </div>
@@ -568,7 +601,7 @@ const renderConsultations = () => (
           <div className="doctor-workspace-row">
             <div>
               <strong>Nomsa Khumalo</strong>
-              <span>VH-2026-00398 • General consultation</span>
+              <span>VH-2026-00398 â€¢ General consultation</span>
             </div>
             <span className="doctor-status confirmed">Completed</span>
           </div>
@@ -624,8 +657,8 @@ const renderMedicalRecords = () => (
         <div className="doctor-workspace-row">
           <div>
             <strong>Thabo Mokoena</strong>
-            <span>VH-2026-00421 • Last visit: 12 Sep 2026</span>
-            <span>History: General consultation • Prescription recorded</span>
+            <span>VH-2026-00421 â€¢ Last visit: 12 Sep 2026</span>
+            <span>History: General consultation â€¢ Prescription recorded</span>
           </div>
           <span className="doctor-status confirmed">Active</span>
         </div>
@@ -633,8 +666,8 @@ const renderMedicalRecords = () => (
         <div className="doctor-workspace-row">
           <div>
             <strong>Lerato Dlamini</strong>
-            <span>VH-2026-00436 • Last visit: 18 Sep 2026</span>
-            <span>History: Follow-up • Review required</span>
+            <span>VH-2026-00436 â€¢ Last visit: 18 Sep 2026</span>
+            <span>History: Follow-up â€¢ Review required</span>
           </div>
           <span className="doctor-status checked">Review</span>
         </div>
@@ -642,8 +675,8 @@ const renderMedicalRecords = () => (
         <div className="doctor-workspace-row">
           <div>
             <strong>Mpho Nkosi</strong>
-            <span>VH-2026-00452 • Last visit: 21 Sep 2026</span>
-            <span>History: Routine consultation • No active prescription</span>
+            <span>VH-2026-00452 â€¢ Last visit: 21 Sep 2026</span>
+            <span>History: Routine consultation â€¢ No active prescription</span>
           </div>
           <span className="doctor-status confirmed">Active</span>
         </div>
@@ -655,7 +688,7 @@ const renderMedicalRecords = () => (
         <div className="doctor-card-header">
           <div>
             <h3>Current Record</h3>
-            <p>Thabo Mokoena • VH-2026-00421</p>
+            <p>Thabo Mokoena â€¢ VH-2026-00421</p>
           </div>
         </div>
 
@@ -689,15 +722,15 @@ const renderMedicalRecords = () => (
           <div className="doctor-workspace-row">
             <div>
               <strong>Amoxicillin 500mg</strong>
-              <span>Thabo Mokoena • 12 Sep 2026</span>
+              <span>Thabo Mokoena â€¢ 12 Sep 2026</span>
             </div>
-            <span>3× daily</span>
+            <span>3Ã— daily</span>
           </div>
 
           <div className="doctor-workspace-row">
             <div>
               <strong>Paracetamol 500mg</strong>
-              <span>Thabo Mokoena • 12 Sep 2026</span>
+              <span>Thabo Mokoena â€¢ 12 Sep 2026</span>
             </div>
             <span>As required</span>
           </div>
@@ -707,73 +740,189 @@ const renderMedicalRecords = () => (
   </>
 );
 
+const loadNotifications = useCallback(async () => {
+  try {
+    setNotificationsLoading(true);
+    setNotificationsError("");
+
+    const [notificationResult, countResult] = await Promise.all([
+      fetchNotifications(20),
+      fetchUnreadNotificationCount(),
+    ]);
+
+    setNotifications(
+      Array.isArray(notificationResult?.data)
+        ? notificationResult.data
+        : []
+    );
+
+    setUnreadNotificationCount(
+      Number(countResult?.count) || 0
+    );
+  } catch (error) {
+    console.error("Failed to load doctor notifications:", error);
+    setNotificationsError(
+      "Unable to load notifications. Please try again."
+    );
+  } finally {
+    setNotificationsLoading(false);
+  }
+}, []);
+
+
+const handleMarkNotificationAsRead = async (notification) => {
+  if (!notification || notification.readAt) return;
+
+  try {
+    await markNotificationAsRead(notification.id);
+
+    setNotifications((current) =>
+      current.map((item) =>
+        item.id === notification.id
+          ? { ...item, readAt: new Date().toISOString() }
+          : item
+      )
+    );
+
+    setUnreadNotificationCount((count) => Math.max(0, count - 1));
+  } catch (error) {
+    console.error("Failed to mark notification as read:", error);
+    setNotificationsError("Unable to update this notification.");
+  }
+};
+
+useEffect(() => {
+  loadNotifications();
+
+  const token = localStorage.getItem("token");
+  if (!token) return undefined;
+
+  const socket = io("http://localhost:5000", {
+    auth: { token },
+  });
+
+  socket.on("notification:new", loadNotifications);
+
+  return () => {
+    socket.off("notification:new", loadNotifications);
+    socket.disconnect();
+  };
+}, [loadNotifications]);
+
+useEffect(() => {
+  if (!notificationDropdownOpen) return undefined;
+
+  const handleOutsideClick = (event) => {
+    if (
+      notificationDropdownRef.current &&
+      !notificationDropdownRef.current.contains(event.target)
+    ) {
+      setNotificationDropdownOpen(false);
+    }
+  };
+
+  const handleEscape = (event) => {
+    if (event.key === "Escape") {
+      setNotificationDropdownOpen(false);
+    }
+  };
+
+  document.addEventListener("mousedown", handleOutsideClick);
+  document.addEventListener("keydown", handleEscape);
+
+  return () => {
+    document.removeEventListener("mousedown", handleOutsideClick);
+    document.removeEventListener("keydown", handleEscape);
+  };
+}, [notificationDropdownOpen]);
+
+
+
+
 const renderNotifications = () => (
-  <>
-    <div className="doctor-section-header">
-      <h2>Notifications</h2>
-      <p>Stay updated with appointments, queue activity and clinical events.</p>
+  <section className="doctor-card doctor-notifications-page">
+    <div className="doctor-card-header doctor-notifications-header">
+      <div>
+        <h2>Notifications</h2>
+        <p>Your latest updates from Vhutec Med.</p>
+      </div>
+
+      <span className="doctor-notifications-count">
+        {unreadNotificationCount} unread
+      </span>
     </div>
 
-    <section className="doctor-card">
-      <div className="doctor-card-header">
-        <div>
-          <h3>Recent Notifications</h3>
-          <p>Latest updates from your doctor workspace.</p>
-        </div>
+    {notificationsLoading ? (
+      <p className="doctor-notifications-state" role="status">
+        Loading notifications...
+      </p>
+    ) : notificationsError ? (
+      <div className="doctor-notifications-state">
+        <p role="alert">{notificationsError}</p>
+        <button
+          type="button"
+          className="doctor-notifications-button"
+          onClick={loadNotifications}
+        >
+          Try again
+        </button>
       </div>
+    ) : notifications.length === 0 ? (
+      <p className="doctor-notifications-state">
+        You're all caught up. New updates will appear here.
+      </p>
+    ) : (
+      <div className="doctor-notifications-list">
+        {notifications.map((notification) => (
+          <article
+            className={`doctor-notification-row ${
+              notification.readAt ? "is-read" : "is-unread"
+            }`}
+            key={notification.id}
+          >
+            <div className="doctor-notification-content">
+              <strong>{notification.title}</strong>
 
-      <div className="doctor-activity-list">
-        <div className="doctor-activity">
-          <div className="doctor-activity-icon">
-            <FiCalendar />
-          </div>
+              <p>{notification.message}</p>
 
-          <div>
-            <strong>Upcoming appointment</strong>
-            <p>Thabo Mokoena is scheduled for 09:30 in Room 4.</p>
-            <p>10 minutes ago</p>
-          </div>
-        </div>
+              <small>
+                {notification.createdAt
+                  ? new Date(notification.createdAt).toLocaleString(
+                      "en-ZA",
+                      {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }
+                    )
+                  : ""}
+              </small>
 
-        <div className="doctor-activity">
-          <div className="doctor-activity-icon">
-            <FiUserCheck />
-          </div>
+              {!notification.readAt && (
+                <button
+                  type="button"
+                  className="doctor-notifications-button"
+                  onClick={() =>
+                    handleMarkNotificationAsRead(notification)
+                  }
+                >
+                  Mark as read
+                </button>
+              )}
+            </div>
 
-          <div>
-            <strong>Patient checked in</strong>
-            <p>Lerato Dlamini has checked in for the 10:30 appointment.</p>
-            <p>18 minutes ago</p>
-          </div>
-        </div>
-
-        <div className="doctor-activity">
-          <div className="doctor-activity-icon">
-            <FiUsers />
-          </div>
-
-          <div>
-            <strong>Queue updated</strong>
-            <p>There are currently 6 patients waiting for consultation.</p>
-            <p>25 minutes ago</p>
-          </div>
-        </div>
-
-        <div className="doctor-activity">
-          <div className="doctor-activity-icon">
-            <FiFileText />
-          </div>
-
-          <div>
-            <strong>Medical record updated</strong>
-            <p>Sarah Mthembu's consultation record was updated.</p>
-            <p>42 minutes ago</p>
-          </div>
-        </div>
+            {!notification.readAt && (
+              <span
+                className="doctor-notification-unread-indicator"
+                aria-label="Unread notification"
+              />
+            )}
+          </article>
+        ))}
       </div>
-    </section>
-  </>
+    )}
+  </section>
 );
+
 
   const renderDashboard = () => (
     <>
@@ -873,7 +1022,7 @@ const renderNotifications = () => (
 <div className="doctor-patient-info">
   <strong>{getPatientName(appointment.patient)}</strong>
   <span>
-    {getFileNumber(appointment.patient)} · {appointment.reason}
+    {getFileNumber(appointment.patient)} Â· {appointment.reason}
   </span>
 </div>
 
@@ -983,7 +1132,7 @@ const renderNotifications = () => (
         </div>
       </section>
 
-      
+
 <section className="doctor-card">
   <div className="doctor-card-header">
     <div>
@@ -1043,7 +1192,7 @@ const renderNotifications = () => (
         </div>
       </section> */}
 
-  
+
 
 
     </>
@@ -1132,26 +1281,34 @@ const renderNotifications = () => (
           </div>
         </div>
 
-          
-          <div className="doctor-profile">
-            <div className="doctor-profile-avatar">
-              {doctor
-                ? getPatientInitials(doctor)
-                : "DR"}
-            </div>
 
-            <div className="doctor-profile-info">
-              <strong>
-                {doctor
-                  ? `Dr. ${doctor.firstName} ${doctor.lastName}`
-                  : "Loading doctor..."}
-              </strong>
+          <div className="doctor-header-actions">
+  <NotificationBell
+    notifications={notifications}
+    unreadCount={unreadNotificationCount}
+    loading={notificationsLoading}
+    error={notificationsError}
+    onRefresh={loadNotifications}
+    onMarkAsRead={handleMarkNotificationAsRead}
+    onViewAll={() => setActiveSection("Notifications")}
+  />
 
-              <span>
-                {doctor?.speciality || "Doctor"}
-              </span>
-            </div>
-          </div>
+  <div className="doctor-profile">
+    <div className="doctor-profile-avatar">
+      {doctor ? getPatientInitials(doctor) : "DR"}
+    </div>
+
+    <div className="doctor-profile-info">
+      <strong>
+        {doctor
+          ? `Dr. ${doctor.firstName} ${doctor.lastName}`
+          : "Loading doctor..."}
+      </strong>
+
+      <span>{doctor?.speciality || "Doctor"}</span>
+    </div>
+  </div>
+</div>
 
         </header>
 
@@ -1159,6 +1316,19 @@ const renderNotifications = () => (
 
           {loading && (
   <p role="status">Loading your dashboard...</p>
+)}
+
+{!loading && loadError && (
+  <div className="doctor-card" role="alert">
+    <h3>Unable to load your dashboard</h3>
+    <p>{loadError}</p>
+    <button
+      type="button"
+      onClick={() => window.location.reload()}
+    >
+      Try again
+    </button>
+  </div>
 )}
 
 {!loading && !loadError && (
