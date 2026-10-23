@@ -2139,3 +2139,19 @@
     gap: 10px;
   }
 }
+
+.notification-mark-read {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: white;
+  color: var(--primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.notification-mark-read:hover {
+  background: var(--primary-light);
+}

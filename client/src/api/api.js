@@ -86,3 +86,14 @@ export const checkInAppointment = (id) =>
  
 export const callNextPatient = () =>
   api.post("/receptionist/queue/call-next").then((res) => res.data);
+
+
+// ---- Notifications ----
+export const fetchNotifications = (limit = 20) =>
+  api.get("/notifications", { params: { limit } }).then((res) => res.data);
+
+export const fetchUnreadNotificationCount = () =>
+  api.get("/notifications/unread-count").then((res) => res.data);
+
+export const markNotificationAsRead = (id) =>
+  api.patch(`/notifications/${id}/read`).then((res) => res.data);
