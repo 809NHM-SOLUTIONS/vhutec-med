@@ -25,6 +25,8 @@ import {
   createAppointment,
 } from "../../api/api";
 
+import PatientQueueStatus from "./PatientQueueStatus";
+
 import "./PatientDashboard.css";
 
 // Appointment.status is CANCELLED/COMPLETED => history, everything else => upcoming/active.
@@ -785,34 +787,12 @@ function PatientDashboard() {
     </section>
   );
 
-  // NOTE: Queue Status and Notifications below are NOT wired to the backend
-  // yet — there's no "current queue position" or "notifications" endpoint
-  // in the API surface you've shown me, so these remain placeholder/demo
-  // views for now rather than something I'd guess at faking convincingly.
+  // Live queue data for the logged-in patient (GET /api/patients/me/queue).
   const renderQueueStatusSection = () => (
-    <section className="dashboard-section">
-      <div className="section-page-header">
-        <h2>Queue Status</h2>
-        <p>View your current position in the patient queue.</p>
-      </div>
-
-      <div className="queue-page-grid">
-        <div className="queue-info-card">
-          <div className="queue-info-icon">
-            <FiActivity />
-          </div>
-
-          <h3>Queue Information</h3>
-
-          <p>
-            Live queue position isn't connected to the backend yet — this
-            will show your real position once the Queue API is wired up.
-          </p>
-        </div>
-      </div>
-    </section>
+    <PatientQueueStatus onNavigate={handleNavigation} />
   );
 
+  // NOTE: Notifications is not wired to the backend yet.
   const renderNotificationsSection = () => (
     <section className="dashboard-section">
       <div className="section-page-header">

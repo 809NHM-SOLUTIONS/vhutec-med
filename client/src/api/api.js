@@ -86,3 +86,5 @@ export const checkInAppointment = (id) =>
  
 export const callNextPatient = () =>
   api.post("/receptionist/queue/call-next").then((res) => res.data);
+   export const fetchMyQueue = () =>
+     api.get("/patients/me/queue").then((res) => res.data);
