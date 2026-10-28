@@ -9,6 +9,7 @@ import {
   FiSearch,
   FiUserCheck,
   FiUsers,
+  FiBell,
 } from "react-icons/fi";
 
 // The api file is src/api/api.js (this page is src/pages/receptionist/).
@@ -19,9 +20,16 @@ import {
   fetchReceptionOverview,
   fetchReceptionPatients,
   fetchReceptionQueue,
+  fetchNotifications,
+  fetchUnreadNotificationCount,
+  markNotificationAsRead,
 } from "../../api/api";
 
 import "./ReceptionistDashboard.css";
+
+import { io } from "socket.io-client";
+
+import NotificationBell from "../../components/notifications/NotificationBell";
 
 const NAVIGATION = [
   { label: "Dashboard", icon: FiGrid },
@@ -29,6 +37,7 @@ const NAVIGATION = [
   { label: "Queue", icon: FiClock },
   { label: "Patients", icon: FiUsers },
   { label: "Check-In", icon: FiUserCheck },
+  { label: "Notifications", icon: FiBell },
 ];
 
 const REFRESH_MS = 30000;
@@ -70,7 +79,7 @@ const formatShortDate = (iso) =>
         month: "short",
         year: "numeric",
       })
-    : "—";
+    : "â€”";
 
 const formatLongDate = (dateKey) =>
   dateKey
@@ -98,7 +107,7 @@ const startMinutes = (timeSlot) => {
 
 const percent = (part, total) => (total ? Math.round((part / total) * 100) : 0);
 
-const fileNumber = (value) => value || "—";
+const fileNumber = (value) => value || "â€”";
 
 const getStoredUser = () => {
   try {
@@ -134,6 +143,7 @@ const useLiveData = (loader, intervalMs) => {
     },
     [loader]
   );
+
 
   useEffect(() => {
     const token = { cancelled: false };
@@ -292,8 +302,8 @@ const QueueItem = ({ entry }) => (
       <strong>{entry.patientName}</strong>
       <span>
         {entry.doctorName}
-        {entry.checkedInAt ? ` • Arrived ${formatClock(entry.checkedInAt)}` : ""}
-        {entry.calledAt ? ` • Called ${formatClock(entry.calledAt)}` : ""}
+        {entry.checkedInAt ? ` â€¢ Arrived ${formatClock(entry.checkedInAt)}` : ""}
+        {entry.calledAt ? ` â€¢ Called ${formatClock(entry.calledAt)}` : ""}
       </span>
     </div>
 
@@ -615,7 +625,7 @@ const AppointmentsSection = () => {
               <div className="reception-card-header">
                 <div>
                   <h3>Today's Appointment Schedule</h3>
-                  <p>{formatLongDate(data.date)} • Reception desk schedule</p>
+                  <p>{formatLongDate(data.date)} â€¢ Reception desk schedule</p>
                 </div>
               </div>
 
@@ -667,7 +677,7 @@ const AppointmentsSection = () => {
                             ) : a.queueNumber ? (
                               `Queue #${String(a.queueNumber).padStart(2, "0")}`
                             ) : (
-                              "—"
+                              "â€”"
                             )}
                           </td>
                         </tr>
@@ -723,7 +733,7 @@ const QueueSection = () => {
                 icon={FiClock}
                 label="Average Wait"
                 value={
-                  stats.avgWaitMinutes === null ? "—" : `${stats.avgWaitMinutes} min`
+                  stats.avgWaitMinutes === null ? "â€”" : `${stats.avgWaitMinutes} min`
                 }
                 note="Check-in to being called"
               />
@@ -747,11 +757,11 @@ const QueueSection = () => {
                     <div className="reception-workspace-row" key={entry.id}>
                       <div>
                         <strong>
-                          #{String(entry.queueNumber).padStart(2, "0")} •{" "}
+                          #{String(entry.queueNumber).padStart(2, "0")} â€¢{" "}
                           {entry.patientName}
                         </strong>
                         <span>
-                          {fileNumber(entry.patientNumber)} • {entry.doctorName} •{" "}
+                          {fileNumber(entry.patientNumber)} â€¢ {entry.doctorName} â€¢{" "}
                           {entry.department}
                         </span>
                       </div>
@@ -935,9 +945,9 @@ const CheckInSection = () => {
                       <div>
                         <strong>{a.patientName}</strong>
                         <span>
-                          {a.timeSlot} • {a.department} • {a.doctorName}
+                          {a.timeSlot} â€¢ {a.department} â€¢ {a.doctorName}
                           {a.queueNumber
-                            ? ` • Queue #${String(a.queueNumber).padStart(2, "0")}`
+                            ? ` â€¢ Queue #${String(a.queueNumber).padStart(2, "0")}`
                             : ""}
                         </span>
                       </div>
@@ -984,6 +994,10 @@ const CheckInSection = () => {
 const ReceptionistDashboard = () => {
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+const [notificationsLoading, setNotificationsLoading] = useState(false);
+const [notificationsError, setNotificationsError] = useState("");
 
   const user = getStoredUser();
   const displayName =
@@ -1009,6 +1023,76 @@ const ReceptionistDashboard = () => {
     localStorage.removeItem("user");
     window.location.href = "/login";
   };
+
+
+const loadNotifications = async () => {
+  try {
+    setNotificationsLoading(true);
+    setNotificationsError("");
+
+    const [notificationResult, countResult] = await Promise.all([
+      fetchNotifications(20),
+      fetchUnreadNotificationCount(),
+    ]);
+
+    setNotifications(notificationResult.data || []);
+    setUnreadNotificationCount(Number(countResult.count) || 0);
+  } catch (error) {
+    console.error("Failed to load receptionist notifications:", error);
+    setNotificationsError("Unable to load notifications. Please try again.");
+  } finally {
+    setNotificationsLoading(false);
+  }
+};
+
+const handleMarkNotificationAsRead = async (notification) => {
+  if (!notification) return false;
+  if (notification.readAt) return true;
+
+  try {
+    await markNotificationAsRead(notification.id);
+
+    setNotifications((current) =>
+      current.map((item) =>
+        item.id === notification.id
+          ? { ...item, readAt: new Date().toISOString() }
+          : item
+      )
+    );
+
+    setUnreadNotificationCount((count) => Math.max(0, count - 1));
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Failed to mark receptionist notification as read:",
+      error
+    );
+    setNotificationsError("Unable to update this notification.");
+    return false;
+  }
+};
+
+
+
+useEffect(() => {
+  loadNotifications();
+
+  const token = localStorage.getItem("token");
+  if (!token) return undefined;
+
+  const socket = io("http://localhost:5000", {
+    auth: { token },
+  });
+
+  socket.on("notification:new", loadNotifications);
+
+  return () => {
+    socket.disconnect();
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
 
   return (
     <div className="reception-dashboard">
@@ -1071,14 +1155,26 @@ const ReceptionistDashboard = () => {
             </div>
           </div>
 
-          <div className="reception-profile">
-            <div className="reception-profile-avatar">{initials}</div>
+          <div className="reception-header-actions">
+  <NotificationBell
+    notifications={notifications}
+    unreadCount={unreadNotificationCount}
+    loading={notificationsLoading}
+    error={notificationsError}
+    onRefresh={loadNotifications}
+    onMarkAsRead={handleMarkNotificationAsRead}
+    onViewAll={() => handleNavigation("Notifications")}
+  />
 
-            <div className="reception-profile-info">
-              <strong>{displayName}</strong>
-              <span>Receptionist</span>
-            </div>
-          </div>
+  <div className="reception-profile">
+    <div className="reception-profile-avatar">{initials}</div>
+
+    <div className="reception-profile-info">
+      <strong>{displayName}</strong>
+      <span>Receptionist</span>
+    </div>
+  </div>
+</div>
         </header>
 
         <section className="reception-content">
@@ -1089,6 +1185,150 @@ const ReceptionistDashboard = () => {
           {activeSection === "Queue" && <QueueSection />}
           {activeSection === "Patients" && <PatientsSection />}
           {activeSection === "Check-In" && <CheckInSection />}
+
+
+{activeSection === "Notifications" && (
+  <section className="reception-notifications-page">
+    <div className="reception-notifications-heading">
+      <div>
+        <span className="reception-notifications-eyebrow">
+          NOTIFICATION CENTRE
+        </span>
+        <h2>Notifications</h2>
+        <p>
+          Stay updated on appointments, patient arrivals and reception activities.
+        </p>
+      </div>
+
+      <div className="reception-notifications-summary">
+        <span className="reception-notifications-summary-icon">
+          <FiBell />
+        </span>
+        <div>
+          <strong>{unreadNotificationCount}</strong>
+          <span>Unread notifications</span>
+        </div>
+      </div>
+    </div>
+
+    <div className="reception-notifications-panel">
+      <div className="reception-notifications-panel-header">
+        <div>
+          <h3>Recent updates</h3>
+          <p>Your latest notifications from Vhutec Med</p>
+        </div>
+
+        <button
+          type="button"
+          className="reception-notifications-refresh"
+          onClick={loadNotifications}
+          disabled={notificationsLoading}
+        >
+          <FiClock />
+          {notificationsLoading ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      {notificationsLoading && notifications.length === 0 ? (
+        <div className="reception-notifications-state">
+          <FiBell />
+          <strong>Loading notifications</strong>
+          <p>Please wait while we retrieve your latest updates.</p>
+        </div>
+      ) : notificationsError && notifications.length === 0 ? (
+        <div className="reception-notifications-state">
+          <strong>Unable to load notifications</strong>
+          <p>{notificationsError}</p>
+          <button
+            type="button"
+            className="reception-notifications-primary-button"
+            onClick={loadNotifications}
+          >
+            Try again
+          </button>
+        </div>
+      ) : notifications.length === 0 ? (
+        <div className="reception-notifications-state">
+          <span className="reception-notifications-empty-icon">
+            <FiCheckCircle />
+          </span>
+          <strong>You're all caught up!</strong>
+          <p>New updates will appear here when they become available.</p>
+        </div>
+      ) : (
+        <div className="reception-notifications-list">
+          {notifications.map((notification) => (
+            <article
+              key={notification.id}
+              className={`reception-notification-item ${
+                notification.readAt ? "is-read" : "is-unread"
+              }`}
+            >
+              <div className="reception-notification-icon">
+                <FiBell />
+              </div>
+
+              <div className="reception-notification-content">
+                <div className="reception-notification-title-row">
+                  <h4>{notification.title || "Vhutec Med Update"}</h4>
+
+                  {!notification.readAt && (
+                    <span className="reception-notification-unread-badge">
+                      New
+                    </span>
+                  )}
+                </div>
+
+                <p>{notification.message}</p>
+
+                <span className="reception-notification-time">
+                  <FiClock />
+                  {notification.createdAt
+                    ? new Date(notification.createdAt).toLocaleString("en-ZA", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })
+                    : "Date unavailable"}
+                </span>
+              </div>
+
+              <div className="reception-notification-action">
+                {notification.readAt ? (
+                  <span className="reception-notification-read-status">
+                    <FiCheckCircle />
+                    Read
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleMarkNotificationAsRead(notification)
+                    }
+                    className="reception-notification-mark-button"
+                  >
+                    Mark as read
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {notificationsError && notifications.length > 0 && (
+        <p className="reception-notifications-inline-error" role="alert">
+          {notificationsError}
+        </p>
+      )}
+
+      <div className="reception-notifications-footer">
+        Showing your latest {notifications.length} notification
+        {notifications.length === 1 ? "" : "s"}
+      </div>
+    </div>
+  </section>
+)}
+
         </section>
       </main>
     </div>

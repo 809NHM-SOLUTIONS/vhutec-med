@@ -23,9 +23,18 @@ import {
   fetchDoctors,
   fetchMyAppointments,
   createAppointment,
+  fetchNotifications,
+  fetchUnreadNotificationCount,
+  markNotificationAsRead,
 } from "../../api/api";
 
+import PatientQueueStatus from "./PatientQueueStatus";
+
 import "./PatientDashboard.css";
+
+import { io } from "socket.io-client";
+
+import NotificationBell from "../../components/notifications/NotificationBell";
 
 // Appointment.status is CANCELLED/COMPLETED => history, everything else => upcoming/active.
 const HISTORY_STATUSES = ["COMPLETED", "CANCELLED"];
@@ -232,6 +241,13 @@ function PatientDashboard() {
 
   // ---- This patient's appointments ----
   const [appointments, setAppointments] = useState([]);
+
+  // ---- Patient notifications ----
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState("");
+
   const [appointmentsLoading, setAppointmentsLoading] = useState(true);
   const [appointmentsError, setAppointmentsError] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -289,12 +305,84 @@ function PatientDashboard() {
     }
   };
 
+  const loadNotifications = async () => {
+  try {
+    setNotificationsLoading(true);
+    setNotificationsError("");
+
+    const [notificationsResult, countResult] = await Promise.all([
+      fetchNotifications(20),
+      fetchUnreadNotificationCount(),
+    ]);
+
+    setNotifications(notificationsResult.data || []);
+    setUnreadNotificationCount(Number(countResult.count) || 0);
+  } catch (error) {
+    console.error("Failed to load notifications:", error);
+    setNotificationsError("Unable to load notifications. Please try again.");
+  } finally {
+    setNotificationsLoading(false);
+  }
+};
+
+  const handleMarkNotificationAsRead = async (notification) => {
+  if (!notification) return false;
+  if (notification.readAt) return true;
+
+  try {
+    await markNotificationAsRead(notification.id);
+
+    setNotifications((current) =>
+      current.map((item) =>
+        item.id === notification.id
+          ? { ...item, readAt: new Date().toISOString() }
+          : item
+      )
+    );
+
+    setUnreadNotificationCount((count) => Math.max(0, count - 1));
+
+    return true;
+  } catch (error) {
+    console.error("Failed to mark notification as read:", error);
+    setNotificationsError(
+      "Unable to update this notification. Please try again."
+    );
+    return false;
+  }
+};
+
   useEffect(() => {
     loadProfile();
     loadReferenceData();
     loadAppointments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+  loadNotifications();
+
+  const token = localStorage.getItem("token");
+  if (!token) return;
+
+  const socket = io("http://localhost:5000", {
+    auth: { token },
+  });
+
+  socket.on("notification:new", () => {
+    loadNotifications();
+  });
+
+  socket.on("connect", () => {
+    loadNotifications();
+  });
+
+  return () => {
+    socket.disconnect();
+  };
+  // Load notifications when the dashboard mounts.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   const menuItems = [
     { label: "Dashboard", icon: FiGrid },
@@ -785,34 +873,12 @@ function PatientDashboard() {
     </section>
   );
 
-  // NOTE: Queue Status and Notifications below are NOT wired to the backend
-  // yet — there's no "current queue position" or "notifications" endpoint
-  // in the API surface you've shown me, so these remain placeholder/demo
-  // views for now rather than something I'd guess at faking convincingly.
+  // Live queue data for the logged-in patient (GET /api/patients/me/queue).
   const renderQueueStatusSection = () => (
-    <section className="dashboard-section">
-      <div className="section-page-header">
-        <h2>Queue Status</h2>
-        <p>View your current position in the patient queue.</p>
-      </div>
-
-      <div className="queue-page-grid">
-        <div className="queue-info-card">
-          <div className="queue-info-icon">
-            <FiActivity />
-          </div>
-
-          <h3>Queue Information</h3>
-
-          <p>
-            Live queue position isn't connected to the backend yet — this
-            will show your real position once the Queue API is wired up.
-          </p>
-        </div>
-      </div>
-    </section>
+    <PatientQueueStatus onNavigate={handleNavigation} />
   );
 
+  // NOTE: Notifications is not wired to the backend yet.
   const renderNotificationsSection = () => (
     <section className="dashboard-section">
       <div className="section-page-header">
@@ -824,12 +890,97 @@ function PatientDashboard() {
         <div className="notifications-page-header">
           <div>
             <h3>Recent Notifications</h3>
-            <p>
-              Notifications aren't connected to the backend yet — nothing
-              to show here for now.
-            </p>
+            <p>Your latest updates from Vhutec Med.</p>
           </div>
+
+          <span className="notification-count">
+            {unreadNotificationCount} unread
+          </span>
         </div>
+
+        {notificationsLoading ? (
+          <div className="notifications-page-list">
+            <div className="notification-page-item">
+              <div className="notification-page-content">
+                <p>Loading your notifications...</p>
+              </div>
+            </div>
+          </div>
+        ) : notificationsError ? (
+          <div className="notifications-page-list">
+            <div className="notification-page-item">
+              <div className="notification-page-content">
+                <p>{notificationsError}</p>
+                <button type="button" onClick={loadNotifications}>
+                  Try again
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="notifications-page-list">
+            <div className="notification-page-item">
+              <div className="notification-page-icon">
+                <FiBell />
+              </div>
+              <div className="notification-page-content">
+                <strong>You're all caught up</strong>
+                <p>
+                  New appointment and healthcare updates will appear here.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="notifications-page-list">
+            {notifications.map((notification) => (
+              <div
+                key={notification.id}
+                className="notification-page-item"
+                style={{
+                  background: notification.readAt ? "transparent" : "var(--primary-light)",
+                }}
+              >
+                <div className="notification-page-icon">
+                  <FiBell />
+                </div>
+
+                <div className="notification-page-content">
+                  <strong>{notification.title}</strong>
+                  <p>{notification.message}</p>
+                  <span>
+                    {notification.createdAt
+                      ? new Date(notification.createdAt).toLocaleString("en-ZA", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
+                      : ""}
+                  </span>
+
+                  {!notification.readAt && (
+                    <div>
+                      <button
+                        type="button"
+                        className="notification-mark-read"
+                        onClick={() =>
+                          handleMarkNotificationAsRead(notification)
+                        }
+                      >
+                        Mark as read
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {!notification.readAt && (
+                  <span className="notification-arrow" title="Unread">
+                    •
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -919,10 +1070,15 @@ function PatientDashboard() {
           </div>
 
           <div className="header-actions">
-            <button className="notification-button">
-              <FiBell />
-              <span />
-            </button>
+            <NotificationBell
+  notifications={notifications}
+  unreadCount={unreadNotificationCount}
+  loading={notificationsLoading}
+  error={notificationsError}
+  onRefresh={loadNotifications}
+  onMarkAsRead={handleMarkNotificationAsRead}
+  onViewAll={() => handleNavigation("Notifications")}
+/>
 
             <div className="header-profile">
               <div className="profile-avatar">{patientInitials}</div>

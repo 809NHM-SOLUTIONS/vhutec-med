@@ -1,0 +1,70 @@
+/* Additions for the Queue Status page. Layout, cards, buttons and error
+   styles come from PatientDashboard.css; this file only adds the status colours. */
+
+.queue-state-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.queue-state-badge-idle { background: #e5e7eb; color: #374151; }
+.queue-state-badge-waiting { background: #fef3c7; color: #92400e; }
+.queue-state-badge-called { background: #dbeafe; color: #1d4ed8; }
+.queue-state-badge-consultation { background: #ede9fe; color: #6d28d9; }
+.queue-state-badge-completed { background: #dcfce7; color: #166534; }
+.queue-state-badge-cancelled { background: #fee2e2; color: #b91c1c; }
+
+.queue-position {
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: #fffbeb;
+  text-align: center;
+}
+
+.queue-position-number {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #92400e;
+}
+
+.queue-position p {
+  margin: 6px 0 0;
+}
+
+.queue-details {
+  margin-top: 16px;
+}
+
+.queue-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.queue-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.queue-footer span,
+.queue-footer .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

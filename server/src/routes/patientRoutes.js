@@ -1,4 +1,3 @@
-
 const express = require("express");
 
 const {
@@ -9,6 +8,8 @@ const {
     deletePatient,
     getMyProfile
 } = require("../controllers/patientController");
+
+const { getMyQueue } = require("../controllers/patientQueueController");
 
 const authenticate = require("../middleware/auth");
 const roleGuard = require("../middleware/roleGuard");
@@ -21,6 +22,14 @@ router.get(
     authenticate,
     roleGuard("PATIENT"),
     getMyProfile
+);
+
+// Patient portal: patients can view their own live queue status.
+router.get(
+    "/me/queue",
+    authenticate,
+    roleGuard("PATIENT"),
+    getMyQueue
 );
 
 // Patient directory: authorised staff can view patient records.
