@@ -3,6 +3,11 @@ const {
     notifyConsultationEvent
 } = require("../services/consultationNotifications");
 
+const consultationWorkflowError = (message) => {
+    const error = new Error(message);
+    error.statusCode = 409;
+    return error;
+};
 
 const getDoctorIdForUser = async (userId) => {
     const doctor = await prisma.doctor.findUnique({
@@ -252,32 +257,6 @@ const createConsultation = async (req, res) => {
         const parsedStartedAt = null;
         const parsedCompletedAt = null;
 
-        if (startedAt !== undefined && startedAt !== null && startedAt !== "") {
-            parsedStartedAt = new Date(startedAt);
-
-            if (Number.isNaN(parsedStartedAt.getTime())) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Invalid startedAt date"
-                });
-            }
-        }
-
-        if (
-            completedAt !== undefined &&
-            completedAt !== null &&
-            completedAt !== ""
-        ) {
-            parsedCompletedAt = new Date(completedAt);
-
-            if (Number.isNaN(parsedCompletedAt.getTime())) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Invalid completedAt date"
-                });
-            }
-        }
-
         const consultation = await prisma.consultation.create({
             data: {
                 appointmentId: parsedAppointmentId,
@@ -482,7 +461,6 @@ const updateConsultation = async (req, res) => {
             parsedStartedAt = startedAt
                 ? new Date(startedAt)
                 : null;
-
             if (
                 parsedStartedAt &&
                 Number.isNaN(parsedStartedAt.getTime())
@@ -538,7 +516,6 @@ const updateConsultation = async (req, res) => {
                 message: "A started consultation cannot have its start time cleared"
             });
         }
-
         // Once completed, a consultation cannot be reopened by clearing its completion time.
         if (existingConsultation.completedAt && !parsedCompletedAt) {
             return res.status(400).json({
@@ -547,24 +524,19 @@ const updateConsultation = async (req, res) => {
             });
         }
 
-
-        const consultation =
-            await prisma.consultation.update({
+               // Update consultation, appointment and queue atomically.
+        const result = await prisma.$transaction(async (tx) => {
+            const consultation = await tx.consultation.update({
                 where: { id },
-
                 data: {
                     appointmentId: parsedAppointmentId,
                     doctorId: parsedDoctorId,
-
-                    notes:
-                        notes !== undefined
-                            ? notes
-                            : existingConsultation.notes,
-
+                    notes: notes !== undefined
+                        ? notes
+                        : existingConsultation.notes,
                     startedAt: parsedStartedAt,
                     completedAt: parsedCompletedAt
                 },
-
                 include: {
                     appointment: {
                         include: {
@@ -576,41 +548,95 @@ const updateConsultation = async (req, res) => {
                     doctor: true
                 }
             });
+            // Starting a consultation updates the appointment and queue.
+            if (!existingConsultation.startedAt && parsedStartedAt) {
+                const queue = await tx.queue.findUnique({
+                    where: { appointmentId: parsedAppointmentId }
+                });
 
-            // Notify only when the consultation first starts.
-if (
-    !existingConsultation.startedAt &&
-    parsedStartedAt
-) {
-    await notifyConsultationEvent({
-        consultation,
-        type: "CONSULTATION_STARTED",
-        eventKey: `consultation-started:${consultation.id}`
-    });
-}
+                if (!queue) {
+                    throw consultationWorkflowError(
+                        "Cannot start consultation: queue record not found"
+                    );
+                }
 
-// Notify only when the consultation first completes.
-if (
-    !existingConsultation.completedAt &&
-    parsedCompletedAt
-) {
-    await notifyConsultationEvent({
-        consultation,
-        type: "CONSULTATION_COMPLETED",
-        eventKey: `consultation-completed:${consultation.id}`
-    });
-}
+                if (!["CALLED", "IN_CONSULTATION"].includes(queue.status)) {
+                    throw consultationWorkflowError(
+                        "Cannot start consultation: patient must be called first"
+                    );
+                }
+
+                await tx.appointment.update({
+                    where: { id: parsedAppointmentId },
+                    data: { status: "IN_PROGRESS" }
+                });
+
+                await tx.queue.update({
+                    where: { appointmentId: parsedAppointmentId },
+                    data: { status: "IN_CONSULTATION" }
+                });
+            }
+            // Completing a consultation updates the appointment and queue.
+            if (!existingConsultation.completedAt && parsedCompletedAt) {
+                const queue = await tx.queue.findUnique({
+                    where: { appointmentId: parsedAppointmentId }
+                });
+
+                if (!queue || queue.status !== "IN_CONSULTATION") {
+                    throw consultationWorkflowError(
+                        "Cannot complete consultation: patient is not in consultation"
+                    );
+                }
+
+                await tx.appointment.update({
+                    where: { id: parsedAppointmentId },
+                    data: { status: "COMPLETED" }
+                });
+
+                await tx.queue.update({
+                    where: { appointmentId: parsedAppointmentId },
+                    data: { status: "COMPLETED" }
+                });
+            }
+
+
+            return consultation;
+        });
+
+        // Notify only after the database transaction commits.
+        if (!existingConsultation.startedAt && parsedStartedAt) {
+            await notifyConsultationEvent({
+                consultation: result,
+                type: "CONSULTATION_STARTED",
+                eventKey: `consultation-started:${result.id}`
+            });
+        }
+
+        if (!existingConsultation.completedAt && parsedCompletedAt) {
+            await notifyConsultationEvent({
+                consultation: result,
+                type: "CONSULTATION_COMPLETED",
+                eventKey: `consultation-completed:${result.id}`
+            });
+        }
+
+        const consultation = result;
+
 
         res.json({
             success: true,
             data: consultation
         });
-    } catch (error) {
+        } catch (error) {
         console.error("Update consultation error:", error);
 
-        res.status(500).json({
+        const statusCode = error.statusCode || 500;
+
+        res.status(statusCode).json({
             success: false,
-            message: "Failed to update consultation"
+            message: statusCode === 409
+                ? error.message
+                : "Failed to update consultation"
         });
     }
 };
@@ -650,7 +676,9 @@ const deleteConsultation = async (req, res) => {
     } catch (error) {
         console.error("Delete consultation error:", error);
 
-        res.status(500).json({
+        const statusCode = error.statusCode || 500;
+
+        res.status(statusCode).json({
             success: false,
             message: "Failed to delete consultation"
         });

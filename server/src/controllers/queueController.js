@@ -275,6 +275,24 @@ if (
         message: "Invalid queue status"
     });
 }
+
+
+// Receptionists can call waiting patients.
+// Consultation status changes are handled by the consultation workflow.
+if (
+    status !== undefined &&
+    status !== existingQueue.status &&
+    !(
+        existingQueue.status === "WAITING" &&
+        status === "CALLED"
+    )
+) {
+    return res.status(409).json({
+        success: false,
+        message:
+            "Invalid queue transition. Only waiting patients can be called through this endpoint."
+    });
+}
         let parsedCheckedInAt = existingQueue.checkedInAt;
         let parsedCalledAt = existingQueue.calledAt;
 
@@ -308,6 +326,15 @@ if (
                     message: "Invalid calledAt date"
                 });
             }
+        }
+
+        // Record the time when a waiting patient is first called.
+        if (
+            existingQueue.status === "WAITING" &&
+            status === "CALLED" &&
+            calledAt === undefined
+        ) {
+            parsedCalledAt = new Date();
         }
 
         const queue = await prisma.queue.update({
