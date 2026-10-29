@@ -28,7 +28,8 @@ import {
   markNotificationAsRead,
 } from "../../api/api";
 
-import PatientQueueStatus from "./PatientQueueStatus";
+import PatientQueueStatus from "./patientQueueStatus";
+import TimeSlotPicker from "./timeSlotPicker";
 
 import "./PatientDashboard.css";
 
@@ -424,6 +425,8 @@ function PatientDashboard() {
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
+  // Bumped after a booking conflict so the time slots are checked again.
+  const [slotRefreshKey, setSlotRefreshKey] = useState(0);
 
   const availableDoctors = useMemo(() => {
     if (!appointmentForm.departmentId) return [];
@@ -444,6 +447,7 @@ function PatientDashboard() {
       ...appointmentForm,
       departmentId: event.target.value,
       doctorId: "", // reset doctor when department changes
+      time: "", // a chosen time only applies to the previous doctor
     });
   };
 
@@ -485,9 +489,20 @@ function PatientDashboard() {
       loadAppointments();
     } catch (error) {
       console.error("Booking error:", error);
-      setBookingError(
-        error.message || "Unable to submit your appointment. Please try again."
-      );
+
+      if (error.status === 409) {
+        // Someone else took the slot after it was shown. Clear the choice and
+        // re-check availability so the patient can pick another time.
+        setAppointmentForm((current) => ({ ...current, time: "" }));
+        setSlotRefreshKey((key) => key + 1);
+        setBookingError(
+          "That time was just booked by someone else. Please choose another available time."
+        );
+      } else {
+        setBookingError(
+          error.message || "Unable to submit your appointment. Please try again."
+        );
+      }
     } finally {
       setBookingLoading(false);
     }
@@ -650,6 +665,7 @@ function PatientDashboard() {
                   setAppointmentForm({
                     ...appointmentForm,
                     doctorId: event.target.value,
+                    time: "",
                   })
                 }
                 disabled={!appointmentForm.departmentId}
@@ -683,32 +699,25 @@ function PatientDashboard() {
                   setAppointmentForm({
                     ...appointmentForm,
                     date: event.target.value,
+                    time: "",
                   })
                 }
                 required
               />
             </div>
 
-            <div className="form-group">
-              <label htmlFor="time">Preferred Time</label>
-              <select
-                id="time"
+            <div className="form-group form-group-full">
+              <label>Preferred Time</label>
+              <TimeSlotPicker
+                slots={TIME_SLOTS}
+                doctorId={appointmentForm.doctorId}
+                date={appointmentForm.date}
                 value={appointmentForm.time}
-                onChange={(event) =>
-                  setAppointmentForm({
-                    ...appointmentForm,
-                    time: event.target.value,
-                  })
+                refreshKey={slotRefreshKey}
+                onChange={(time) =>
+                  setAppointmentForm((current) => ({ ...current, time }))
                 }
-                required
-              >
-                <option value="">Select time</option>
-                {TIME_SLOTS.map((slot) => (
-                  <option key={slot} value={slot}>
-                    {slot}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="form-group form-group-full">

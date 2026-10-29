@@ -37,7 +37,12 @@ api.interceptors.response.use(
         ? "Unable to connect to the server. Please check your connection and try again."
         : "Something went wrong. Please try again.");
 
-    return Promise.reject(new Error(message));
+    // Keep the HTTP status on the error so callers can react to it
+    // (e.g. the booking form treats 409 as "that time was just taken").
+    const normalised = new Error(message);
+    normalised.status = error.response?.status;
+
+    return Promise.reject(normalised);
   }
 );
 
@@ -46,6 +51,9 @@ export default api;
 // ---- Patients ----
 export const fetchMyProfile = () =>
   api.get("/patients/me").then((res) => res.data);
+
+export const fetchMyQueue = () =>
+  api.get("/patients/me/queue").then((res) => res.data);
 
 // ---- Departments ----
 export const fetchDepartments = () =>
@@ -66,6 +74,15 @@ export const fetchMyAppointments = () =>
 export const createAppointment = (payload) =>
   api.post("/appointments", payload).then((res) => res.data);
 
+// Time slots already taken for one doctor on one date, e.g. ["09:00", "10:00"].
+export const fetchBookedSlots = (doctorId, date) =>
+  api
+    .get("/appointments/booked-slots", { params: { doctorId, date } })
+    .then((res) => {
+      const rows = res.data?.data ?? res.data ?? [];
+      return rows.map((row) => (typeof row === "string" ? row : row.timeSlot));
+    });
+
 // ---- Receptionist ----
 export const fetchReceptionOverview = () =>
   api.get("/receptionist/overview").then((res) => res.data);
@@ -79,18 +96,15 @@ export const fetchReceptionQueue = () =>
 export const fetchReceptionPatients = (search = "") =>
   api.get("/receptionist/patients", { params: { search } }).then((res) => res.data);
 
-export const fetchDoctorDashboard = () =>
-    api.get("/doctors/me/dashboard").then(res => res.data);
 export const checkInAppointment = (id) =>
   api.post(`/receptionist/appointments/${id}/check-in`).then((res) => res.data);
- 
+
 export const callNextPatient = () =>
   api.post("/receptionist/queue/call-next").then((res) => res.data);
 
-   export const fetchMyQueue = () =>
-     api.get("/patients/me/queue").then((res) => res.data);
-
-
+// ---- Doctor ----
+export const fetchDoctorDashboard = () =>
+  api.get("/doctors/me/dashboard").then((res) => res.data);
 
 // ---- Notifications ----
 export const fetchNotifications = (limit = 20) =>

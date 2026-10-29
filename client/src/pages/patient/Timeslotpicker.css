@@ -1,0 +1,11 @@
+.slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 0.5rem; }
+.slot-button { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; padding: 0.55rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font: inherit; cursor: pointer; }
+.slot-button:hover:not(:disabled) { border-color: var(--primary, #2563eb); }
+.slot-button.selected { background: var(--primary, #2563eb); border-color: var(--primary, #2563eb); color: #fff; }
+.slot-button.unavailable { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; text-decoration: line-through; }
+.slot-button.unavailable small { text-decoration: none; font-size: 0.7rem; }
+.slot-button:focus-visible { outline: 2px solid var(--primary, #2563eb); outline-offset: 2px; }
+.slot-message { margin: 0; padding: 0.7rem 0.9rem; border-radius: 8px; background: #f8fafc; color: #475569; font-size: 0.92rem; }
+.slot-message-error { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; background: #fef2f2; color: #991b1b; }
+.slot-message-error button { font: inherit; border: 1px solid currentColor; background: transparent; color: inherit; border-radius: 6px; padding: 0.2rem 0.6rem; cursor: pointer; }
+.slot-hint { display: block; margin-top: 0.4rem; color: #64748b; }
