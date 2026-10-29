@@ -549,33 +549,34 @@ const updateConsultation = async (req, res) => {
                 }
             });
             // Starting a consultation updates the appointment and queue.
-            if (!existingConsultation.startedAt && parsedStartedAt) {
-                const queue = await tx.queue.findUnique({
-                    where: { appointmentId: parsedAppointmentId }
-                });
+            // Starting a consultation updates the appointment and queue.
+if (parsedStartedAt && !existingConsultation.completedAt) {
+    const queue = await tx.queue.findUnique({
+        where: { appointmentId: parsedAppointmentId }
+    });
 
-                if (!queue) {
-                    throw consultationWorkflowError(
-                        "Cannot start consultation: queue record not found"
-                    );
-                }
+    if (!queue) {
+        throw consultationWorkflowError(
+            "Cannot start consultation: queue record not found"
+        );
+    }
 
-                if (!["CALLED", "IN_CONSULTATION"].includes(queue.status)) {
-                    throw consultationWorkflowError(
-                        "Cannot start consultation: patient must be called first"
-                    );
-                }
+    if (queue.status === "CALLED") {
+        await tx.appointment.update({
+            where: { id: parsedAppointmentId },
+            data: { status: "IN_PROGRESS" }
+        });
 
-                await tx.appointment.update({
-                    where: { id: parsedAppointmentId },
-                    data: { status: "IN_PROGRESS" }
-                });
-
-                await tx.queue.update({
-                    where: { appointmentId: parsedAppointmentId },
-                    data: { status: "IN_CONSULTATION" }
-                });
-            }
+        await tx.queue.update({
+            where: { appointmentId: parsedAppointmentId },
+            data: { status: "IN_CONSULTATION" }
+        });
+    } else if (queue.status !== "IN_CONSULTATION") {
+        throw consultationWorkflowError(
+            "Cannot start consultation: patient must be called first"
+        );
+    }
+}
             // Completing a consultation updates the appointment and queue.
             if (!existingConsultation.completedAt && parsedCompletedAt) {
                 const queue = await tx.queue.findUnique({

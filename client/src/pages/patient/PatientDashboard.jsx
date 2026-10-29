@@ -36,6 +36,7 @@ import "./PatientDashboard.css";
 import { io } from "socket.io-client";
 
 import NotificationBell from "../../components/notifications/NotificationBell";
+import useNotifications from "../../components/notifications/useNotifications";
 
 // Appointment.status is CANCELLED/COMPLETED => history, everything else => upcoming/active.
 const HISTORY_STATUSES = ["COMPLETED", "CANCELLED"];
@@ -237,24 +238,38 @@ function PatientDashboard() {
   // ---- Reference data for booking ----
   const [departments, setDepartments] = useState([]);
   const [doctors, setDoctors] = useState([]);
+
   const [referenceDataLoading, setReferenceDataLoading] = useState(true);
   const [referenceDataError, setReferenceDataError] = useState("");
 
   // ---- This patient's appointments ----
   const [appointments, setAppointments] = useState([]);
 
-  // ---- Patient notifications ----
-  const [notifications, setNotifications] = useState([]);
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
-  const [notificationsError, setNotificationsError] = useState("");
+const [currentTime, setCurrentTime] = useState(() => new Date());
+
+useEffect(() => {
+  const timer = setInterval(() => {
+    setCurrentTime(new Date());
+  }, 30_000);
+
+  return () => clearInterval(timer);
+}, []);
 
   const [appointmentsLoading, setAppointmentsLoading] = useState(true);
   const [appointmentsError, setAppointmentsError] = useState("");
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1);
-});
+    const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const {
+    notifications,
+    unreadCount: unreadNotificationCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    loadNotifications,
+    markAsRead: handleMarkNotificationAsRead,
+  } = useNotifications();
 
   const loadProfile = async () => {
     try {
@@ -296,6 +311,23 @@ function PatientDashboard() {
 
       setDepartments(departmentsRes.data || []);
       setDoctors(doctorsRes.data || []);
+
+//       setDepartments(
+//   Array.isArray(departmentsRes)
+//     ? departmentsRes
+//     : Array.isArray(departmentsRes?.data)
+//       ? departmentsRes.data
+//       : []
+// );
+
+// setDoctors(
+//   Array.isArray(doctorsRes)
+//     ? doctorsRes
+//     : Array.isArray(doctorsRes?.data)
+//       ? doctorsRes.data
+//       : []
+// );
+
     } catch (error) {
       console.error("Failed to load booking reference data:", error);
       setReferenceDataError(
@@ -306,84 +338,92 @@ function PatientDashboard() {
     }
   };
 
-  const loadNotifications = async () => {
-  try {
-    setNotificationsLoading(true);
-    setNotificationsError("");
-
-    const [notificationsResult, countResult] = await Promise.all([
-      fetchNotifications(20),
-      fetchUnreadNotificationCount(),
-    ]);
-
-    setNotifications(notificationsResult.data || []);
-    setUnreadNotificationCount(Number(countResult.count) || 0);
-  } catch (error) {
-    console.error("Failed to load notifications:", error);
-    setNotificationsError("Unable to load notifications. Please try again.");
-  } finally {
-    setNotificationsLoading(false);
-  }
-};
-
-  const handleMarkNotificationAsRead = async (notification) => {
-  if (!notification) return false;
-  if (notification.readAt) return true;
-
-  try {
-    await markNotificationAsRead(notification.id);
-
-    setNotifications((current) =>
-      current.map((item) =>
-        item.id === notification.id
-          ? { ...item, readAt: new Date().toISOString() }
-          : item
-      )
-    );
-
-    setUnreadNotificationCount((count) => Math.max(0, count - 1));
-
-    return true;
-  } catch (error) {
-    console.error("Failed to mark notification as read:", error);
-    setNotificationsError(
-      "Unable to update this notification. Please try again."
-    );
-    return false;
-  }
-};
-
   useEffect(() => {
-    loadProfile();
-    loadReferenceData();
-    loadAppointments();
+  loadProfile();
+  loadReferenceData();
+  loadAppointments();
+}, []);
+
+//   const loadNotifications = async () => {
+//   try {
+//     setNotificationsLoading(true);
+//     setNotificationsError("");
+
+//     const [notificationsResult, countResult] = await Promise.all([
+//       fetchNotifications(20),
+//       fetchUnreadNotificationCount(),
+//     ]);
+
+//     setNotifications(notificationsResult.data || []);
+//     setUnreadNotificationCount(Number(countResult.count) || 0);
+//   } catch (error) {
+//     console.error("Failed to load notifications:", error);
+//     setNotificationsError("Unable to load notifications. Please try again.");
+//   } finally {
+//     setNotificationsLoading(false);
+//   }
+// };
+
+//   const handleMarkNotificationAsRead = async (notification) => {
+//   if (!notification) return false;
+//   if (notification.readAt) return true;
+
+//   try {
+//     await markNotificationAsRead(notification.id);
+
+//     setNotifications((current) =>
+//       current.map((item) =>
+//         item.id === notification.id
+//           ? { ...item, readAt: new Date().toISOString() }
+//           : item
+//       )
+//     );
+
+//     setUnreadNotificationCount((count) => Math.max(0, count - 1));
+
+//     return true;
+//   } catch (error) {
+//     console.error("Failed to mark notification as read:", error);
+//     setNotificationsError(
+//       "Unable to update this notification. Please try again."
+//     );
+//     return false;
+//   }
+// };
+  useEffect(() => {
+    loadNotifications();
+
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const socket = io("http://localhost:5000", {
+      auth: { token },
+    });
+
+    socket.on("notification:new", (notification) => {
+      // Always reload notifications
+      loadNotifications();
+
+      // If a queue or appointment status changes, reload the appointments list!
+      // This is what moves the patient from "Upcoming" to "History" automatically.
+      if (
+        ["CONSULTATION_COMPLETED", "APPOINTMENT_CANCELLED", "PATIENT_CALLED", "QUEUE_UPDATED"].includes(notification.type)
+      ) {
+        loadAppointments();
+      }
+    });
+
+    socket.on("connect", () => {
+      loadNotifications();
+      loadAppointments();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-  loadNotifications();
-
-  const token = localStorage.getItem("token");
-  if (!token) return;
-
-  const socket = io("http://localhost:5000", {
-    auth: { token },
-  });
-
-  socket.on("notification:new", () => {
-    loadNotifications();
-  });
-
-  socket.on("connect", () => {
-    loadNotifications();
-  });
-
-  return () => {
-    socket.disconnect();
-  };
-  // Load notifications when the dashboard mounts.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
 
   const menuItems = [
     { label: "Dashboard", icon: FiGrid },
@@ -508,20 +548,82 @@ function PatientDashboard() {
     }
   };
 
-  const upcomingAppointments = appointments.filter(
-    (appointment) => !HISTORY_STATUSES.includes(appointment.status)
+
+const now = currentTime;
+
+const todayKey = `${now.getFullYear()}-${String(
+  now.getMonth() + 1
+).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+const isAppointmentBeingHandled = (appointment) =>
+  ["CHECKED_IN", "IN_PROGRESS"].includes(appointment.status) ||
+  ["WAITING", "CALLED", "IN_CONSULTATION"].includes(
+    appointment.queue?.status
   );
 
-  const historyAppointments = appointments.filter((appointment) =>
-    HISTORY_STATUSES.includes(appointment.status)
+
+
+const isAppointmentTimePassed = (appointment) => {
+  if (!appointment.date) return false;
+
+  const dateKey = String(appointment.date).slice(0, 10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    return false;
+  }
+
+  if (dateKey < todayKey) return true;
+  if (dateKey > todayKey) return false;
+
+  const match = /^(\d{1,2}):(\d{2})/.exec(
+    appointment.timeSlot || ""
   );
 
-  const nextAppointment = useMemo(() => {
-    const sorted = [...upcomingAppointments].sort(
-      (a, b) => new Date(a.date) - new Date(b.date)
-    );
-    return sorted[0] || null;
-  }, [upcomingAppointments]);
+  if (!match) return false;
+
+  const appointmentMinutes =
+    Number(match[1]) * 60 + Number(match[2]);
+
+  return appointmentMinutes < currentMinutes;
+};
+
+
+
+
+const upcomingAppointments = appointments.filter((appointment) => {
+  if (HISTORY_STATUSES.includes(appointment.status)) {
+    return false;
+  }
+
+  if (isAppointmentBeingHandled(appointment)) {
+    return true;
+  }
+
+  return !isAppointmentTimePassed(appointment);
+});
+
+const historyAppointments = appointments.filter((appointment) => {
+  if (HISTORY_STATUSES.includes(appointment.status)) {
+    return true;
+  }
+
+  return (
+    !isAppointmentBeingHandled(appointment) &&
+    isAppointmentTimePassed(appointment)
+  );
+});
+
+
+const nextAppointment = useMemo(() => {
+  const sorted = [...upcomingAppointments].sort(
+    (a, b) => new Date(a.date) - new Date(b.date)
+  );
+
+  return sorted[0] || null;
+}, [upcomingAppointments]);
+
 
   const patientFullName = patient
     ? `${patient.firstName} ${patient.lastName}`
@@ -1253,7 +1355,7 @@ function PatientDashboard() {
                 {appointmentsLoading ? (
                   <p>Loading appointments...</p>
                 ) : (
-                  renderAppointmentsTable(appointments.slice(0, 5))
+                  renderAppointmentsTable(upcomingAppointments.slice(0, 5))
                 )}
               </section>
 
@@ -1267,9 +1369,9 @@ function PatientDashboard() {
                     <span className="section-label">PATIENT PROFILE</span>
                     <h3>{patientFullName}</h3>
                     <p>
-                      
+
                         National ID: <strong>{patient.idNumber}</strong>
-                      
+
                     </p>
                   </div>
 

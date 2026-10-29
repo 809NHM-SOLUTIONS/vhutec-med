@@ -115,3 +115,16 @@ export const fetchUnreadNotificationCount = () =>
 
 export const markNotificationAsRead = (id) =>
   api.patch(`/notifications/${id}/read`).then((res) => res.data);
+
+// ---- Consultations ----
+export const fetchConsultations = () =>
+  api.get("/consultations").then((res) => res.data);
+
+export const fetchConsultationById = (id) =>
+  api.get(`/consultations/${id}`).then((res) => res.data);
+
+export const createConsultation = (payload) =>
+  api.post("/consultations", payload).then((res) => res.data);
+
+export const updateConsultation = (id, payload) =>
+  api.put(`/consultations/${id}`, payload).then((res) => res.data);

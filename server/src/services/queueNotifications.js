@@ -1,4 +1,3 @@
-
 const prisma = require("../prisma");
 const { createNotification } = require("./notificationService");
 
@@ -9,7 +8,8 @@ const notifyQueueEvent = async ({ queue, type, eventKey }) => {
             select: {
                 id: true,
                 patient: { select: { userId: true } },
-                doctor: { select: { userId: true } }
+                // ADDED: We need the doctor's name
+                doctor: { select: { firstName: true, lastName: true, userId: true } }
             }
         });
 
@@ -19,6 +19,10 @@ const notifyQueueEvent = async ({ queue, type, eventKey }) => {
             select: { userId: true }
         });
 
+        const doctorName = appointment.doctor
+            ? `Dr. ${appointment.doctor.firstName} ${appointment.doctor.lastName}`
+            : "the doctor";
+
         const messages = {
             PATIENT_CHECKED_IN: {
                 patient: ["Check-in received", "Your check-in has been recorded."],
@@ -26,7 +30,8 @@ const notifyQueueEvent = async ({ queue, type, eventKey }) => {
                 receptionist: ["Patient checked in", "A patient has checked in."]
             },
             PATIENT_CALLED: {
-                patient: ["You are being called", "Please proceed to the consultation area."],
+                // UPDATED: Adds doctor name to the patient's notification
+                patient: ["You are being called", `You are called to consult with ${doctorName}. Please proceed to the consultation room.`],
                 doctor: ["Patient called", "The queue status has changed to called."],
                 receptionist: ["Patient called", "A patient has been called for consultation."]
             },
@@ -51,10 +56,7 @@ const notifyQueueEvent = async ({ queue, type, eventKey }) => {
         }
 
         for (const receptionist of receptionists) {
-            if (
-                receptionist.userId &&
-                !recipients.has(receptionist.userId)
-            ) {
+            if (receptionist.userId && !recipients.has(receptionist.userId)) {
                 recipients.set(receptionist.userId, templates.receptionist);
             }
         }

@@ -28,8 +28,24 @@ const patients = {}; for (let p=101;p<=109;p++) patients[1000+p] = { id:p };
 const fake = {
   patient: { findUnique: async ({where}) => patients[where.userId] || null },
   appointment: { findMany: async ({where}) => appts.filter(a => a.patientId===where.patientId) },
-  queue: { findMany: async () => appts.filter(a=>a.queue&&a.queue.status==="WAITING")
-      .sort((x,y)=>x.queue.queueNumber-y.queue.queueNumber||x.queue.id-y.queue.id).map(a=>({id:a.queue.id})) },
+
+queue: {
+  findMany: async () =>
+    appts
+      .filter(
+        (a) =>
+          a.queue &&
+          a.queue.status === "WAITING" &&
+          a.status === "CHECKED_IN"
+      )
+      .sort(
+        (x, y) =>
+          x.queue.queueNumber - y.queue.queueNumber ||
+          x.queue.id - y.queue.id
+      )
+      .map((a) => ({ id: a.queue.id })),
+},
+
 };
 const orig = Module._load;
 Module._load = function(req, parent, ...r){ return req==="../prisma" ? fake : orig.call(this, req, parent, ...r); };
@@ -40,14 +56,14 @@ let fail=0; const eq=(n,a,b)=>{const ok=JSON.stringify(a)===JSON.stringify(b); i
 (async()=>{
   let r;
   r=await call(1101); eq("called patient", [r.body.data.state, r.body.data.position], ["CALLED", null]);
-  r=await call(1102); eq("2nd waiting -> position 1", [r.body.data.state, r.body.data.position, r.body.data.ahead, r.body.data.waitingTotal], ["WAITING",1,0,4]);
+  r=await call(1102); eq("2nd waiting -> position 1", [r.body.data.state, r.body.data.position, r.body.data.ahead, r.body.data.waitingTotal], ["WAITING",1,0,3]);
   r=await call(1103); eq("cancelled shows CANCELLED, no position", [r.body.data.state, r.body.data.position], ["CANCELLED", null]);
-  r=await call(1104); eq("behind a cancelled-but-waiting entry, Call Next still reaches it first -> position 3", [r.body.data.state, r.body.data.position, r.body.data.ahead], ["WAITING",3,2]);
+ r=await call(1104); eq("stale cancelled entry does not affect position", [r.body.data.state, r.body.data.position, r.body.data.ahead], ["WAITING",2,1]);
   r=await call(1105); eq("not checked in", [r.body.data.state, r.body.data.queue], ["NOT_CHECKED_IN", null]);
   r=await call(1106); eq("in consultation", r.body.data.state, "IN_CONSULTATION");
   r=await call(1107); eq("completed", r.body.data.state, "COMPLETED");
   r=await call(1108); eq("stale CALLED + IN_PROGRESS -> IN_CONSULTATION", r.body.data.state, "IN_CONSULTATION");
-  r=await call(1109); eq("two visits: waiting one shown, other counted", [r.body.data.state, r.body.data.appointment.id, r.body.data.otherVisitsToday, r.body.data.position], ["WAITING", 9.5, 1, 4]);
+ r=await call(1109); eq("two visits: waiting one shown, other counted", [r.body.data.state, r.body.data.appointment.id, r.body.data.otherVisitsToday, r.body.data.position], ["WAITING", 9.5, 1, 3]);
   r=await call(1999); eq("no patient profile -> 404", r.status, 404);
   r=await call(undefined); eq("no user -> 401", r.status, 401);
   r=await call(1102); eq("no other patient data in payload", /"patient"|101|103|104/.test(JSON.stringify(Object.keys(r.body.data))), false);

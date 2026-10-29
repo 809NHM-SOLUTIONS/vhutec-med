@@ -30,6 +30,7 @@ import "./ReceptionistDashboard.css";
 import { io } from "socket.io-client";
 
 import NotificationBell from "../../components/notifications/NotificationBell";
+import useNotifications from "../../components/notifications/useNotifications";
 
 const NAVIGATION = [
   { label: "Dashboard", icon: FiGrid },
@@ -79,7 +80,7 @@ const formatShortDate = (iso) =>
         month: "short",
         year: "numeric",
       })
-    : "â€”";
+    : "—";
 
 const formatLongDate = (dateKey) =>
   dateKey
@@ -105,9 +106,57 @@ const startMinutes = (timeSlot) => {
   return match ? Number(match[1]) * 60 + Number(match[2]) : null;
 };
 
+
+
+const isAppointmentBeingHandled = (appointment) =>
+  ["CHECKED_IN", "IN_PROGRESS"].includes(appointment.status) ||
+  ["WAITING", "CALLED", "IN_CONSULTATION"].includes(
+    appointment.queue?.status
+  );
+
+const isAppointmentTimePassed = (appointment, fallbackDate) => {
+  const appointmentDate = String(
+    appointment.date || fallbackDate || ""
+  ).slice(0, 10);
+
+  if (!appointmentDate) return false;
+
+  const now = new Date();
+  const todayKey = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  if (appointmentDate < todayKey) return true;
+  if (appointmentDate > todayKey) return false;
+
+  const appointmentMinutes = startMinutes(appointment.timeSlot);
+
+  if (appointmentMinutes === null) return false;
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  return appointmentMinutes < currentMinutes;
+};
+
+const isActiveAppointment = (appointment, fallbackDate) => {
+  if (["COMPLETED", "CANCELLED"].includes(appointment.status)) {
+    return false;
+  }
+
+  // Keep patients who have already checked in or are being attended to.
+  if (isAppointmentBeingHandled(appointment)) {
+    return true;
+  }
+
+  return !isAppointmentTimePassed(appointment, fallbackDate);
+};
+
+
 const percent = (part, total) => (total ? Math.round((part / total) * 100) : 0);
 
-const fileNumber = (value) => value || "â€”";
+const fileNumber = (value) => value || "-";
 
 const getStoredUser = () => {
   try {
@@ -301,10 +350,14 @@ const QueueItem = ({ entry }) => (
     <div className="reception-queue-patient">
       <strong>{entry.patientName}</strong>
       <span>
-        {entry.doctorName}
-        {entry.checkedInAt ? ` â€¢ Arrived ${formatClock(entry.checkedInAt)}` : ""}
-        {entry.calledAt ? ` â€¢ Called ${formatClock(entry.calledAt)}` : ""}
-      </span>
+  {entry.doctorName}
+  {entry.checkedInAt
+    ? ` | Arrived ${formatClock(entry.checkedInAt)}`
+    : ""}
+  {entry.calledAt
+    ? ` | Called ${formatClock(entry.calledAt)}`
+    : ""}
+</span>
     </div>
 
     <span className="reception-queue-status">
@@ -325,6 +378,12 @@ const OverviewSection = ({ onNavigate }) => {
 
   const stats = data?.stats;
   const queue = data?.queue || [];
+
+const activeAppointments = (data?.appointments || []).filter(
+  (appointment) => isActiveAppointment(appointment, data?.date)
+);
+
+
   const activeQueue = queue.filter((entry) => entry.status !== "COMPLETED");
   const matches = queue.filter((entry) =>
     `${entry.patientName} ${entry.doctorName}`
@@ -468,8 +527,8 @@ const OverviewSection = ({ onNavigate }) => {
                   </thead>
 
                   <tbody>
-                    {data.appointments.length > 0 ? (
-                      data.appointments.slice(0, 8).map((a) => (
+                    {activeAppointments.length > 0 ? (
+  activeAppointments.slice(0, 8).map((a) => (
                         <tr key={a.id}>
                           <td>{a.patientName}</td>
                           <td>{a.doctorName}</td>
@@ -582,7 +641,12 @@ const AppointmentsSection = () => {
   const { data, loading, error, reload } = useLiveData(fetchReceptionAppointments, 60000);
   const action = useAction(reload);
   const stats = data?.stats;
-  const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
+
+const activeAppointments = (data?.appointments || []).filter(
+  (appointment) => isActiveAppointment(appointment, data?.date)
+);
+
+const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
 
   return (
     <>
@@ -625,7 +689,7 @@ const AppointmentsSection = () => {
               <div className="reception-card-header">
                 <div>
                   <h3>Today's Appointment Schedule</h3>
-                  <p>{formatLongDate(data.date)} â€¢ Reception desk schedule</p>
+                 <p>{formatLongDate(data.date)} | Reception desk schedule</p>
                 </div>
               </div>
 
@@ -645,8 +709,8 @@ const AppointmentsSection = () => {
                   </thead>
 
                   <tbody>
-                    {data.appointments.length > 0 ? (
-                      data.appointments.map((a) => (
+                    {activeAppointments.length > 0 ? (
+  activeAppointments.map((a) => (
                         <tr key={a.id}>
                           <td>{a.timeSlot}</td>
                           <td>{a.patientName}</td>
@@ -677,7 +741,7 @@ const AppointmentsSection = () => {
                             ) : a.queueNumber ? (
                               `Queue #${String(a.queueNumber).padStart(2, "0")}`
                             ) : (
-                              "â€”"
+                              "-"
                             )}
                           </td>
                         </tr>
@@ -732,9 +796,11 @@ const QueueSection = () => {
               <StatCard
                 icon={FiClock}
                 label="Average Wait"
-                value={
-                  stats.avgWaitMinutes === null ? "â€”" : `${stats.avgWaitMinutes} min`
-                }
+               value={
+  stats.avgWaitMinutes === null
+    ? "-"
+    : `${stats.avgWaitMinutes} min`
+}
                 note="Check-in to being called"
               />
             </section>
@@ -757,11 +823,12 @@ const QueueSection = () => {
                     <div className="reception-workspace-row" key={entry.id}>
                       <div>
                         <strong>
-                          #{String(entry.queueNumber).padStart(2, "0")} â€¢{" "}
+                          #{String(entry.queueNumber).padStart(2, "0")} |{" "}
                           {entry.patientName}
                         </strong>
+
                         <span>
-                          {fileNumber(entry.patientNumber)} â€¢ {entry.doctorName} â€¢{" "}
+                          {fileNumber(entry.patientNumber)} | {entry.doctorName} |{" "}
                           {entry.department}
                         </span>
                       </div>
@@ -875,9 +942,9 @@ const CheckInSection = () => {
 
   const arrivedStatuses = ["CHECKED_IN", "IN_PROGRESS", "COMPLETED"];
   const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
-  const appointments = (data?.appointments || []).filter(
-    (a) => a.status !== "CANCELLED"
-  );
+const appointments = (data?.appointments || []).filter(
+  (appointment) => isActiveAppointment(appointment, data?.date)
+);
 
   const now = new Date();
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -945,9 +1012,9 @@ const CheckInSection = () => {
                       <div>
                         <strong>{a.patientName}</strong>
                         <span>
-                          {a.timeSlot} â€¢ {a.department} â€¢ {a.doctorName}
+                          {a.timeSlot} | {a.department} | {a.doctorName}
                           {a.queueNumber
-                            ? ` â€¢ Queue #${String(a.queueNumber).padStart(2, "0")}`
+                            ? ` | Queue #${String(a.queueNumber).padStart(2, "0")}`
                             : ""}
                         </span>
                       </div>
@@ -994,10 +1061,15 @@ const CheckInSection = () => {
 const ReceptionistDashboard = () => {
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-const [notificationsLoading, setNotificationsLoading] = useState(false);
-const [notificationsError, setNotificationsError] = useState("");
+
+  const {
+  notifications,
+  unreadCount: unreadNotificationCount,
+  loading: notificationsLoading,
+  error: notificationsError,
+  loadNotifications,
+  markAsRead: handleMarkNotificationAsRead,
+} = useNotifications();
 
   const user = getStoredUser();
   const displayName =
@@ -1023,76 +1095,6 @@ const [notificationsError, setNotificationsError] = useState("");
     localStorage.removeItem("user");
     window.location.href = "/login";
   };
-
-
-const loadNotifications = async () => {
-  try {
-    setNotificationsLoading(true);
-    setNotificationsError("");
-
-    const [notificationResult, countResult] = await Promise.all([
-      fetchNotifications(20),
-      fetchUnreadNotificationCount(),
-    ]);
-
-    setNotifications(notificationResult.data || []);
-    setUnreadNotificationCount(Number(countResult.count) || 0);
-  } catch (error) {
-    console.error("Failed to load receptionist notifications:", error);
-    setNotificationsError("Unable to load notifications. Please try again.");
-  } finally {
-    setNotificationsLoading(false);
-  }
-};
-
-const handleMarkNotificationAsRead = async (notification) => {
-  if (!notification) return false;
-  if (notification.readAt) return true;
-
-  try {
-    await markNotificationAsRead(notification.id);
-
-    setNotifications((current) =>
-      current.map((item) =>
-        item.id === notification.id
-          ? { ...item, readAt: new Date().toISOString() }
-          : item
-      )
-    );
-
-    setUnreadNotificationCount((count) => Math.max(0, count - 1));
-
-    return true;
-  } catch (error) {
-    console.error(
-      "Failed to mark receptionist notification as read:",
-      error
-    );
-    setNotificationsError("Unable to update this notification.");
-    return false;
-  }
-};
-
-
-
-useEffect(() => {
-  loadNotifications();
-
-  const token = localStorage.getItem("token");
-  if (!token) return undefined;
-
-  const socket = io("http://localhost:5000", {
-    auth: { token },
-  });
-
-  socket.on("notification:new", loadNotifications);
-
-  return () => {
-    socket.disconnect();
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
-
 
   return (
     <div className="reception-dashboard">

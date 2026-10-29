@@ -2,6 +2,8 @@
 
 const prisma = require("../prisma");
 
+const { notifyQueueEvent } = require("../services/queueNotifications");
+
 const pad = (n) => String(n).padStart(2, "0");
 
 const toDateKey = (d) =>
@@ -133,10 +135,17 @@ const loadDay = async (dateParam) => {
         date: toDateKey(start),
         stats: buildStats(rows),
         appointments: rows.map(toAppointment),
-        queue: rows
-            .filter((a) => a.queue)
-            .sort((x, y) => x.queue.queueNumber - y.queue.queueNumber)
-            .map(toQueueEntry),
+
+queue: rows
+    .filter(
+        (a) =>
+            a.queue &&
+            a.status !== "CANCELLED" &&
+            a.queue.status !== "COMPLETED"
+    )
+    .sort((x, y) => x.queue.queueNumber - y.queue.queueNumber)
+    .map(toQueueEntry),
+
         activity: buildActivity(rows),
     };
 };
@@ -351,6 +360,12 @@ const checkInAppointment = async (req, res) => {
             )
         );
 
+                await notifyQueueEvent({
+            queue: result.queue,
+            type: "PATIENT_CHECKED_IN",
+            eventKey: `queue-checked-in:${result.queue.id}`,
+        });
+
         res.status(201).json({
             message: `${fullName(result.patient)} checked in. Queue number ${pad(
                 result.queue.queueNumber
@@ -374,10 +389,15 @@ const callNextPatient = async (req, res) => {
                     const { start, end } = dayRange();
 
                     const next = await tx.queue.findFirst({
-                        where: {
-                            status: "WAITING",
-                            appointment: { date: { gte: start, lt: end } },
-                        },
+
+where: {
+    status: "WAITING",
+    appointment: {
+        date: { gte: start, lt: end },
+        status: "CHECKED_IN",
+    },
+},
+
                         orderBy: [{ queueNumber: "asc" }, { id: "asc" }],
                         include: {
                             appointment: {
@@ -416,6 +436,12 @@ const callNextPatient = async (req, res) => {
                 { isolationLevel: "Serializable" }
             )
         );
+
+                await notifyQueueEvent({
+            queue: { ...result, status: "CALLED" },
+            type: "PATIENT_CALLED",
+            eventKey: `queue-called:${result.id}`,
+        });
 
         res.json({
             message: `Called ${fullName(result.appointment.patient)} (queue ${pad(
