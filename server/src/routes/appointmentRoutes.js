@@ -1,9 +1,9 @@
-
 const express = require("express");
 
 const {
     getAppointments,
     getMyAppointments,
+    getBookedSlots,
     getAppointmentById,
     createAppointment,
     updateAppointment,
@@ -15,8 +15,11 @@ const roleGuard = require("../middleware/roleGuard");
 
 const router = express.Router();
 
-// Keep /me before /:id.
+// Keep /me and /booked-slots before /:id, otherwise Express treats them as an id.
 router.get("/me", authenticate, roleGuard("PATIENT"), getMyAppointments);
+
+// Time slots already taken for a doctor on a date (times only, no patient data).
+router.get("/booked-slots", authenticate, getBookedSlots);
 
 // Only staff roles can retrieve the full appointment list.
 router.get(

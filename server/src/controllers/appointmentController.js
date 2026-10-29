@@ -2,6 +2,118 @@ const prisma = require("../prisma");
 const { notifyAppointmentStakeholders } = require("../services/appointmentNotifications");
 
 
+// ---------------------------------------------------------------------------
+// Time-slot availability
+// ---------------------------------------------------------------------------
+
+// Cancelled appointments free their slot again; everything else holds it.
+const SLOT_HOLDING = { not: "CANCELLED" };
+
+// The calendar-day window used for slot conflicts. Appointment dates are stored
+// as midnight UTC of the booked YYYY-MM-DD, so the day is taken in UTC, exactly
+// like the conflict checks in createAppointment and updateAppointment below.
+const utcDayRange = (date) => {
+    const start = new Date(
+        Date.UTC(
+            date.getUTCFullYear(),
+            date.getUTCMonth(),
+            date.getUTCDate()
+        )
+    );
+
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+
+    return { start, end };
+};
+
+// GET /api/appointments/booked-slots?doctorId=1&date=2026-11-02
+// Returns ONLY the time slots already taken for that doctor on that day
+// (e.g. ["09:00", "10:00"]). No patient details are ever returned.
+const getBookedSlots = async (req, res) => {
+    try {
+        const doctorId = Number(req.query.doctorId);
+        const dateParam = String(req.query.date || "");
+        const day = new Date(`${dateParam}T00:00:00.000Z`);
+
+        if (
+            !Number.isInteger(doctorId) ||
+            doctorId <= 0 ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(dateParam) ||
+            Number.isNaN(day.getTime()) ||
+            day.toISOString().slice(0, 10) !== dateParam
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "doctorId and a valid date (YYYY-MM-DD) are required"
+            });
+        }
+
+        const { start, end } = utcDayRange(day);
+
+        const rows = await prisma.appointment.findMany({
+            where: {
+                doctorId,
+                date: { gte: start, lt: end },
+                status: SLOT_HOLDING
+            },
+            select: { timeSlot: true }
+        });
+
+        return res.json({
+            success: true,
+            data: [...new Set(rows.map((row) => row.timeSlot))]
+        });
+    } catch (error) {
+        console.error("Get booked slots error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to check available times"
+        });
+    }
+};
+
+// Creates an appointment only if its slot is still free, checking and creating
+// in ONE serializable transaction. Two patients pressing "Request Appointment"
+// for the same slot at the same moment can no longer both succeed: one gets
+// SLOT_TAKEN (or a write conflict, P2034, which is retried and then reports
+// SLOT_TAKEN once it can see the other booking).
+const createAppointmentIfSlotFree = async (data, include) => {
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            return await prisma.$transaction(
+                async (tx) => {
+                    const { start, end } = utcDayRange(data.date);
+
+                    const clash = await tx.appointment.findFirst({
+                        where: {
+                            doctorId: data.doctorId,
+                            date: { gte: start, lt: end },
+                            timeSlot: data.timeSlot,
+                            status: SLOT_HOLDING
+                        },
+                        select: { id: true }
+                    });
+
+                    if (clash) {
+                        const taken = new Error("That time slot is no longer available.");
+                        taken.code = "SLOT_TAKEN";
+                        throw taken;
+                    }
+
+                    return tx.appointment.create({ data, include });
+                },
+                { isolationLevel: "Serializable" }
+            );
+        } catch (error) {
+            if (error.code === "P2034" && attempt < 3) continue;
+            throw error;
+        }
+    }
+};
+
+
 // GET /api/appointments
 const getAppointments = async (req, res) => {
     try {
@@ -331,8 +443,10 @@ if (conflictingAppointment) {
     });
 }
 
-        const appointment = await prisma.appointment.create({
-            data: {
+        // Final, race-safe check: the slot is re-checked and the appointment
+        // created in one transaction (see createAppointmentIfSlotFree).
+        const appointment = await createAppointmentIfSlotFree(
+            {
                 patientId: parsedPatientId,
                 doctorId: parsedDoctorId,
                 departmentId: parsedDepartmentId,
@@ -341,12 +455,12 @@ if (conflictingAppointment) {
                 reason,
                 status: status || "PENDING"
             },
-            include: {
+            {
                 patient: true,
                 doctor: true,
                 department: true
             }
-        });
+        );
 
         await notifyAppointmentStakeholders({
     appointment,
@@ -366,6 +480,15 @@ if (conflictingAppointment) {
             data: appointment
         });
     } catch (error) {
+        // Someone else took the slot between the check and the booking.
+        if (error.code === "SLOT_TAKEN" || error.code === "P2034") {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "That time slot is no longer available. Please choose another time."
+            });
+        }
+
         console.error("Create appointment error:", error);
 
         res.status(500).json({
@@ -688,6 +811,7 @@ const deleteAppointment = async (req, res) => {
 module.exports = {
     getAppointments,
     getMyAppointments,
+    getBookedSlots,
     getAppointmentById,
     createAppointment,
     updateAppointment,
