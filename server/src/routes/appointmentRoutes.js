@@ -5,6 +5,7 @@ const {
     getMyAppointments,
     getBookedSlots,
     getAppointmentById,
+    getMissedAppointments,
     createAppointment,
     updateAppointment,
     deleteAppointment
@@ -27,6 +28,15 @@ router.get(
     authenticate,
     roleGuard("ADMIN", "RECEPTIONIST", "DOCTOR"),
     getAppointments
+);
+// GET /api/appointments/missed
+// ADMIN and RECEPTIONIST: all missed appointments.
+// DOCTOR: only appointments assigned to the logged-in doctor.
+router.get(
+    "/missed",
+    authenticate,
+    roleGuard("ADMIN", "RECEPTIONIST", "DOCTOR"),
+    getMissedAppointments
 );
 
 // Individual appointment access must also be checked in the controller.

@@ -668,10 +668,90 @@ const resetPassword = async (req, res) => {
     }
 };
 
+
+// --------------------------------------------------
+// Admin resets a user's password
+// --------------------------------------------------
+
+const adminResetPassword = async (req, res) => {
+    try {
+        const { email, password, confirmPassword } = req.body;
+
+        if (!email || !password || !confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Email, password and confirmation are required"
+            });
+        }
+
+        if (password !== confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Passwords do not match"
+            });
+        }
+
+        const validation = passwordSchema.safeParse(password);
+
+        if (!validation.success) {
+            return res.status(400).json({
+                success: false,
+                message: validation.error.issues[0].message
+            });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const user = await prisma.user.findUnique({
+            where: { email: normalizedEmail }
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User account not found"
+            });
+        }
+
+        if (!["DOCTOR", "PATIENT"].includes(user.role)) {
+            return res.status(400).json({
+                success: false,
+                message: "This endpoint is intended for patient and doctor accounts"
+            });
+        }
+
+        const passwordHash = await bcrypt.hash(password, 12);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                resetPasswordToken: null,
+                resetPasswordExpiresAt: null
+            }
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: `${user.role} password reset successfully`
+        });
+
+    } catch (error) {
+        console.error("Admin password reset error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to reset user password"
+        });
+    }
+};
+
+
 module.exports = {
     register,
     login,
     verifyEmail,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    adminResetPassword
 };

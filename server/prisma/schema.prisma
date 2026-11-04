@@ -21,6 +21,7 @@ enum AppointmentStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+  MISSED
 }
 
 enum QueueStatus {
@@ -28,6 +29,7 @@ enum QueueStatus {
   CALLED
   IN_CONSULTATION
   COMPLETED
+  MISSED
 }
 
 enum NotificationType {
@@ -36,6 +38,7 @@ enum NotificationType {
   APPOINTMENT_RESCHEDULED
   APPOINTMENT_CANCELLED
   APPOINTMENT_REMINDER
+  APPOINTMENT_MISSED
   PATIENT_CHECKED_IN
   QUEUE_UPDATED
   PATIENT_CALLED
@@ -43,7 +46,6 @@ enum NotificationType {
   CONSULTATION_COMPLETED
   APPOINTMENT_CONFLICT
 }
-
 
 model User {
   id                        Int       @id @default(autoincrement())

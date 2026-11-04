@@ -7,7 +7,9 @@ const { notifyAppointmentStakeholders } = require("../services/appointmentNotifi
 // ---------------------------------------------------------------------------
 
 // Cancelled appointments free their slot again; everything else holds it.
-const SLOT_HOLDING = { not: "CANCELLED" };
+const SLOT_HOLDING = {
+    notIn: ["CANCELLED", "MISSED"]
+};
 
 // The calendar-day window used for slot conflicts. Appointment dates are stored
 // as midnight UTC of the booked YYYY-MM-DD, so the day is taken in UTC, exactly
@@ -114,6 +116,99 @@ const createAppointmentIfSlotFree = async (data, include) => {
 };
 
 
+
+// Updates an appointment only if its new slot is available
+// and the appointment has not changed since it was first read.
+const updateAppointmentIfSlotFree = async (
+    id,
+    data,
+    include,
+    expectedUpdatedAt
+) => {
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            return await prisma.$transaction(
+                async (tx) => {
+                    const currentAppointment =
+                        await tx.appointment.findUnique({
+                            where: { id },
+                            select: {
+                                id: true,
+                                status: true,
+                                updatedAt: true
+                            }
+                        });
+
+                    if (!currentAppointment) {
+                        const error = new Error("Appointment not found");
+                        error.code = "APPOINTMENT_NOT_FOUND";
+                        throw error;
+                    }
+
+                    if (
+                        currentAppointment.updatedAt.getTime() !==
+                        expectedUpdatedAt.getTime()
+                    ) {
+                        const error = new Error(
+                            "Appointment was changed by another user"
+                        );
+                        error.code = "APPOINTMENT_CHANGED";
+                        throw error;
+                    }
+
+                    if (
+                        !["PENDING", "CONFIRMED", "CHECKED_IN"].includes(
+                            currentAppointment.status
+                        )
+                    ) {
+                        const error = new Error(
+                            "This appointment can no longer be updated"
+                        );
+                        error.code = "APPOINTMENT_NOT_EDITABLE";
+                        throw error;
+                    }
+
+                    if (data.status !== "CANCELLED") {
+                        const { start, end } = utcDayRange(data.date);
+
+                        const clash = await tx.appointment.findFirst({
+                            where: {
+                                id: { not: id },
+                                doctorId: data.doctorId,
+                                date: { gte: start, lt: end },
+                                timeSlot: data.timeSlot,
+                                status: SLOT_HOLDING
+                            },
+                            select: { id: true }
+                        });
+
+                        if (clash) {
+                            const error = new Error(
+                                "This doctor already has an appointment for the selected date and time."
+                            );
+                            error.code = "SLOT_TAKEN";
+                            throw error;
+                        }
+                    }
+
+                    return tx.appointment.update({
+                        where: { id },
+                        data,
+                        include
+                    });
+                },
+                { isolationLevel: "Serializable" }
+            );
+        } catch (error) {
+            if (error.code === "P2034" && attempt < 3) {
+                continue;
+            }
+
+            throw error;
+        }
+    }
+};
+
 // GET /api/appointments
 const getAppointments = async (req, res) => {
     try {
@@ -143,6 +238,73 @@ const getAppointments = async (req, res) => {
         });
     }
 };
+
+// GET /api/appointments/missed
+const getMissedAppointments = async (req, res) => {
+    try {
+        const role = req.user?.role;
+        const userId = Number(req.user?.userId);
+
+        const where = {
+            status: "MISSED"
+        };
+
+        // Restrict doctors to their own assigned appointments.
+        if (role === "DOCTOR") {
+            const doctor = await prisma.doctor.findUnique({
+                where: {
+                    userId
+                },
+                select: {
+                    id: true
+                }
+            });
+
+            if (!doctor) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Doctor profile not found"
+                });
+            }
+
+            where.doctorId = doctor.id;
+        }
+
+        const appointments = await prisma.appointment.findMany({
+            where,
+            include: {
+                patient: true,
+                doctor: true,
+                department: true,
+                queue: true,
+                consultation: true
+            },
+            orderBy: [
+                {
+                    date: "desc"
+                },
+                {
+                    timeSlot: "asc"
+                }
+            ]
+        });
+
+        return res.status(200).json({
+            success: true,
+            count: appointments.length,
+            data: appointments
+        });
+
+    } catch (error) {
+        console.error("Get missed appointments error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve missed appointments"
+        });
+    }
+};
+
 
 
 // GET /api/appointments/me
@@ -288,14 +450,23 @@ if (role === "PATIENT") {
 const createAppointment = async (req, res) => {
     try {
         const {
-            doctorId,
-            departmentId,
-            date,
-            timeSlot,
-            reason,
-            status
-        } = req.body;
+    doctorId,
+    departmentId,
+    date,
+    timeSlot,
+    reason
+} = req.body;
 
+        // New appointments must always start as PENDING.
+        if (
+            req.body.status !== undefined &&
+            req.body.status !== "PENDING"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "New appointments must start with PENDING status"
+            });
+        }
         let parsedPatientId;
 
         if (req.user?.role === "PATIENT") {
@@ -426,9 +597,7 @@ const conflictingAppointment = await prisma.appointment.findFirst({
             lt: nextDayStart
         },
         timeSlot,
-        status: {
-            not: "CANCELLED"
-        }
+        status: SLOT_HOLDING
     },
     select: {
         id: true
@@ -453,7 +622,7 @@ if (conflictingAppointment) {
                 date: appointmentDate,
                 timeSlot,
                 reason,
-                status: status || "PENDING"
+                status: "PENDING"
             },
             {
                 patient: true,
@@ -503,8 +672,7 @@ if (conflictingAppointment) {
 const updateAppointment = async (req, res) => {
     try {
         const id = Number(req.params.id);
-
-        if (Number.isNaN(id)) {
+    if (!Number.isInteger(id) || id <= 0) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid appointment ID"
@@ -523,15 +691,34 @@ const updateAppointment = async (req, res) => {
         }
 
         const {
-            patientId,
-            doctorId,
-            departmentId,
-            date,
-            timeSlot,
-            reason,
-            status
-        } = req.body;
+    patientId,
+    doctorId,
+    departmentId,
+    date,
+    timeSlot,
+    reason,
+    status
+} = req.body;
 
+// Only allow status transitions that belong to the general
+// appointment update workflow.
+if (status !== undefined && status !== existingAppointment.status) {
+    const allowedStatusTransitions = {
+        PENDING: ["CONFIRMED", "CANCELLED"],
+        CONFIRMED: ["CANCELLED"]
+    };
+
+    const allowedStatuses =
+        allowedStatusTransitions[existingAppointment.status] || [];
+
+    if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
+            success: false,
+            message:
+                "Invalid appointment status transition. Use the dedicated workflow for this status change."
+        });
+    }
+}
         const parsedPatientId =
             patientId !== undefined ? Number(patientId) : existingAppointment.patientId;
 
@@ -620,77 +807,46 @@ const updateAppointment = async (req, res) => {
         ? timeSlot
         : existingAppointment.timeSlot;
 
-// Check the selected calendar day.
-const dayStart = new Date(
-    Date.UTC(
-        appointmentDate.getUTCFullYear(),
-        appointmentDate.getUTCMonth(),
-        appointmentDate.getUTCDate()
-    )
+
+
+
+        const updateData = {
+    patientId: parsedPatientId,
+    doctorId: parsedDoctorId,
+    departmentId: parsedDepartmentId,
+    date: appointmentDate,
+    timeSlot: effectiveTimeSlot,
+    reason:
+        reason !== undefined
+            ? reason
+            : existingAppointment.reason,
+    status:
+        status !== undefined
+            ? status
+            : (
+                existingAppointment.status === "CHECKED_IN" &&
+                (
+                    existingAppointment.date.getTime() !== appointmentDate.getTime() ||
+                    existingAppointment.timeSlot !== effectiveTimeSlot ||
+                    existingAppointment.doctorId !== parsedDoctorId ||
+                    existingAppointment.departmentId !== parsedDepartmentId
+                )
+            )
+                ? "CONFIRMED"
+                : existingAppointment.status
+};
+
+const appointment = await updateAppointmentIfSlotFree(
+    id,
+    updateData,
+    {
+        patient: true,
+        doctor: true,
+        department: true
+    },
+    existingAppointment.updatedAt
 );
-
-const nextDayStart = new Date(dayStart);
-nextDayStart.setUTCDate(nextDayStart.getUTCDate() + 1);
-
-// Don't check conflicts when the appointment is being cancelled.
-const effectiveStatus =
-    status !== undefined ? status : existingAppointment.status;
-
-if (effectiveStatus !== "CANCELLED") {
-    const conflictingAppointment = await prisma.appointment.findFirst({
-        where: {
-            id: { not: id },
-            doctorId: parsedDoctorId,
-            date: {
-                gte: dayStart,
-                lt: nextDayStart
-            },
-            timeSlot: effectiveTimeSlot,
-            status: {
-                not: "CANCELLED"
-            }
-        },
-        select: {
-            id: true
-        }
-    });
-
-    if (conflictingAppointment) {
-        return res.status(409).json({
-            success: false,
-            message:
-                "This doctor already has an appointment for the selected date and time."
-        });
-    }
-}
-
-        const appointment = await prisma.appointment.update({
-            where: { id },
-
-            data: {
-                patientId: parsedPatientId,
-                doctorId: parsedDoctorId,
-                departmentId: parsedDepartmentId,
-                date: appointmentDate,
-                timeSlot: effectiveTimeSlot,
-                reason:
-                    reason !== undefined
-                        ? reason
-                        : existingAppointment.reason,
-                status:
-                    status !== undefined
-                        ? status
-                        : existingAppointment.status
-            },
-
-            include: {
-                patient: true,
-                doctor: true,
-                department: true
-            }
-        });
-
-        const scheduleChanged =
+    const scheduleChanged =
     existingAppointment.date.getTime() !== appointment.date.getTime() ||
     existingAppointment.timeSlot !== appointment.timeSlot ||
     existingAppointment.doctorId !== appointment.doctorId ||
@@ -740,6 +896,34 @@ if (notificationEvent) {
         });
     } catch (error) {
         console.error("Update appointment error:", error);
+        if (error.code === "SLOT_TAKEN" || error.code === "P2034") {
+    return res.status(409).json({
+        success: false,
+        message:
+            "That time slot is no longer available. Please choose another time."
+    });
+}
+
+    if (error.code === "APPOINTMENT_NOT_FOUND") {
+    return res.status(404).json({
+        success: false,
+        message: "Appointment not found"
+    });
+}
+
+if (error.code === "APPOINTMENT_CHANGED") {
+    return res.status(409).json({
+        success: false,
+        message: "This appointment was changed by another user. Refresh and try again."
+    });
+}
+
+if (error.code === "APPOINTMENT_NOT_EDITABLE") {
+    return res.status(400).json({
+        success: false,
+        message: "This appointment can no longer be updated."
+    });
+}
 
         res.status(500).json({
             success: false,
@@ -773,11 +957,19 @@ const deleteAppointment = async (req, res) => {
         }
 
         if (existingAppointment.status === "CANCELLED") {
-            return res.json({
-                success: true,
-                message: "Appointment is already cancelled"
-            });
-        }
+    return res.json({
+        success: true,
+        message: "Appointment is already cancelled"
+    });
+}
+
+if (!["PENDING", "CONFIRMED"].includes(existingAppointment.status)) {
+    return res.status(400).json({
+        success: false,
+        message:
+            "Only PENDING or CONFIRMED appointments can be cancelled. Checked-in and completed workflows cannot be cancelled through this endpoint."
+    });
+}
 
         const appointment = await prisma.appointment.update({
             where: { id },
@@ -813,6 +1005,7 @@ module.exports = {
     getMyAppointments,
     getBookedSlots,
     getAppointmentById,
+    getMissedAppointments,
     createAppointment,
     updateAppointment,
     deleteAppointment

@@ -605,24 +605,46 @@ if (parsedStartedAt && !existingConsultation.completedAt) {
         });
 
         // Notify only after the database transaction commits.
+        // Fetch the latest consultation and related records after the transaction commits.
+        const updatedConsultation = await prisma.consultation.findUnique({
+            where: { id },
+            include: {
+                appointment: {
+                    include: {
+                        patient: true,
+                        doctor: true,
+                        department: true
+                    }
+                },
+                doctor: true
+            }
+        });
+
+        if (!updatedConsultation) {
+            return res.status(404).json({
+                success: false,
+                message: "Updated consultation could not be found"
+            });
+        }
+
+        // Notify only after the database transaction commits.
         if (!existingConsultation.startedAt && parsedStartedAt) {
             await notifyConsultationEvent({
-                consultation: result,
+                consultation: updatedConsultation,
                 type: "CONSULTATION_STARTED",
-                eventKey: `consultation-started:${result.id}`
+                eventKey: `consultation-started:${updatedConsultation.id}`
             });
         }
 
         if (!existingConsultation.completedAt && parsedCompletedAt) {
             await notifyConsultationEvent({
-                consultation: result,
+                consultation: updatedConsultation,
                 type: "CONSULTATION_COMPLETED",
-                eventKey: `consultation-completed:${result.id}`
+                eventKey: `consultation-completed:${updatedConsultation.id}`
             });
         }
 
-        const consultation = result;
-
+        const consultation = updatedConsultation;
 
         res.json({
             success: true,

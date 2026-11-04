@@ -3,14 +3,15 @@ const prisma = require("../prisma");
 const { createNotification } = require("./notificationService");
 
 // VHUTEC-MED uses South African local appointment times.
-
 const CHECK_INTERVAL_MS = 60 * 1000;
+const MISSED_GRACE_PERIOD_MS = 60 * 60 * 1000;
 
 let reminderTimer = null;
 let checkInProgress = false;
 
 const getAppointmentInstant = (appointment) => {
     const date = appointment.date;
+
     const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(
         appointment.timeSlot || ""
     );
@@ -26,7 +27,7 @@ const getAppointmentInstant = (appointment) => {
         return null;
     }
 
-    // The stored Date represents the selected calendar date.
+    // Stored appointment date represents the selected calendar date.
     // South Africa is UTC+02:00 and does not observe DST.
     const localDateAsUtc = Date.UTC(
         date.getUTCFullYear(),
@@ -39,6 +40,266 @@ const getAppointmentInstant = (appointment) => {
     return new Date(localDateAsUtc - 2 * 60 * 60 * 1000);
 };
 
+// Automatically mark unattended appointments and their queue records as MISSED.
+const checkMissedAppointments = async (now = new Date()) => {
+    try {
+        const appointments = await prisma.appointment.findMany({
+            where: {
+                status: {
+                    in: ["PENDING", "CONFIRMED"]
+                }
+            },
+            select: {
+                id: true,
+                date: true,
+                timeSlot: true,
+                patient: {
+                    select: {
+                        userId: true
+                    }
+                },
+                doctor: {
+                    select: {
+                        userId: true
+                    }
+                }
+            }
+        });
+
+        let missedCount = 0;
+
+        for (const appointment of appointments) {
+            const appointmentInstant = getAppointmentInstant(appointment);
+
+            if (!appointmentInstant) {
+                continue;
+            }
+
+            const missedAt = new Date(
+                appointmentInstant.getTime() + MISSED_GRACE_PERIOD_MS
+            );
+
+            if (now < missedAt) {
+                continue;
+            }
+
+            // Update the appointment and queue together.
+            const updated = await prisma.$transaction(async (tx) => {
+                const result = await tx.appointment.updateMany({
+                    where: {
+                        id: appointment.id,
+                        status: {
+                            in: ["PENDING", "CONFIRMED"]
+                        }
+                    },
+                    data: {
+                        status: "MISSED"
+                    }
+                });
+
+                // Another process may already have handled this appointment.
+                if (result.count === 0) {
+                    return null;
+                }
+
+                const queueResult = await tx.queue.updateMany({
+                    where: {
+                        appointmentId: appointment.id,
+                        status: {
+                            in: ["WAITING", "CALLED"]
+                        }
+                    },
+                    data: {
+                        status: "MISSED"
+                    }
+                });
+
+                return {
+                    appointmentUpdated: true,
+                    queueUpdatedCount: queueResult.count
+                };
+            });
+
+            // Do not send notifications if this process did not update it.
+            if (!updated) {
+                continue;
+            }
+
+            missedCount++;
+
+            console.log(
+                `Appointment ${appointment.id} marked as MISSED. Queue records updated: ${updated.queueUpdatedCount}.`
+            );
+
+            const appointmentDate = appointment.date
+                .toISOString()
+                .slice(0, 10);
+
+            const notificationRecipients = [
+                {
+                    userId: appointment.patient?.userId,
+                    title: "Appointment marked as missed",
+                    message: `Your appointment scheduled for ${appointmentDate} at ${appointment.timeSlot} has been marked as missed. Please contact the hospital if you need assistance.`,
+                    recipientType: "patient"
+                },
+                {
+                    userId: appointment.doctor?.userId,
+                    title: "Patient missed appointment",
+                    message: `The patient scheduled for ${appointmentDate} at ${appointment.timeSlot} did not attend. The appointment has been marked as missed.`,
+                    recipientType: "doctor"
+                }
+            ];
+
+            // Notify the patient and assigned doctor separately.
+            for (const recipient of notificationRecipients) {
+                if (!recipient.userId) {
+                    continue;
+                }
+
+                try {
+                    await createNotification({
+                        userId: recipient.userId,
+                        appointmentId: appointment.id,
+                        type: "APPOINTMENT_MISSED",
+                        title: recipient.title,
+                        message: recipient.message,
+                        data: {
+                            appointmentId: appointment.id,
+                            date: appointmentDate,
+                            timeSlot: appointment.timeSlot,
+                            status: "MISSED"
+                        },
+                        dedupeKey: `appointment-missed:${appointment.id}:${recipient.recipientType}:${recipient.userId}`
+                    });
+
+                    console.log(
+                        `Missed appointment notification processed for ${recipient.recipientType}, user ${recipient.userId}.`
+                    );
+                } catch (error) {
+                    console.error(
+                        `Missed appointment notification failed for ${recipient.recipientType}, user ${recipient.userId}:`,
+                        error.message
+                    );
+                }
+            }
+        }
+        const missedAppointments = await prisma.appointment.findMany({
+            where: {
+                status: "MISSED"
+            },
+            select: {
+                id: true,
+                date: true,
+                timeSlot: true,
+                patient: {
+                    select: {
+                        userId: true
+                    }
+                },
+                doctor: {
+                    select: {
+                        userId: true
+                    }
+                },
+                notifications: {
+                    where: {
+                        type: "APPOINTMENT_MISSED"
+                    },
+                    select: {
+                        dedupeKey: true
+                    }
+                }
+            }
+        });
+
+        let retryCount = 0;
+
+        for (const appointment of missedAppointments) {
+            const appointmentDate = appointment.date
+                .toISOString()
+                .slice(0, 10);
+
+            const existingKeys = new Set(
+                appointment.notifications
+                    .map(notification => notification.dedupeKey)
+                    .filter(Boolean)
+            );
+
+            const recipients = [
+                {
+                    userId: appointment.patient?.userId,
+                    recipientType: "patient",
+                    title: "Appointment marked as missed",
+                    message: `Your appointment scheduled for ${appointmentDate} at ${appointment.timeSlot} has been marked as missed. Please contact the hospital if you need assistance.`
+                },
+                {
+                    userId: appointment.doctor?.userId,
+                    recipientType: "doctor",
+                    title: "Patient missed appointment",
+                    message: `The patient scheduled for ${appointmentDate} at ${appointment.timeSlot} did not attend. The appointment has been marked as missed.`
+                }
+            ];
+
+            for (const recipient of recipients) {
+                if (!recipient.userId) continue;
+
+                const dedupeKey =
+                    `appointment-missed:${appointment.id}:${recipient.recipientType}:${recipient.userId}`;
+
+                // Skip recipients who already have a saved notification.
+                if (existingKeys.has(dedupeKey)) {
+                    continue;
+                }
+
+                try {
+                    await createNotification({
+                        userId: recipient.userId,
+                        appointmentId: appointment.id,
+                        type: "APPOINTMENT_MISSED",
+                        title: recipient.title,
+                        message: recipient.message,
+                        data: {
+                            appointmentId: appointment.id,
+                            date: appointmentDate,
+                            timeSlot: appointment.timeSlot,
+                            status: "MISSED"
+                        },
+                        dedupeKey
+                    });
+
+                    existingKeys.add(dedupeKey);
+                    retryCount++;
+
+                    console.log(
+                        `Recovered missed-appointment notification for ${recipient.recipientType}, user ${recipient.userId}.`
+                    );
+                } catch (error) {
+                    console.error(
+                        `Missed notification retry failed for appointment ${appointment.id}, ${recipient.recipientType}:`,
+                        error.message
+                    );
+                }
+            }
+        }
+
+        if (retryCount > 0) {
+            console.log(
+                `Missed notification recovery completed: ${retryCount} notification(s) recovered.`
+            );
+        }
+        if (missedCount > 0) {
+            console.log(
+                `Missed appointment check completed: ${missedCount} appointment(s) updated.`
+            );
+        }
+    } catch (error) {
+        console.error(
+            "Missed appointment check failed:",
+            error.message
+        );
+    }
+};
+
 const checkAppointmentReminders = async () => {
     if (checkInProgress) return;
 
@@ -46,7 +307,6 @@ const checkAppointmentReminders = async () => {
 
     try {
         const now = new Date();
-        
 
         const appointments = await prisma.appointment.findMany({
             where: {
@@ -78,6 +338,7 @@ const checkAppointmentReminders = async () => {
             }
         });
 
+        // Existing appointment reminder functionality.
         for (const appointment of appointments) {
             const appointmentInstant = getAppointmentInstant(appointment);
 
@@ -87,17 +348,10 @@ const checkAppointmentReminders = async () => {
                 appointmentInstant.getTime() - 10 * 60 * 1000
             );
 
-            // Send once when the 10-minute reminder time falls
-            // inside the current polling window.
-            // Send when the reminder time has arrived, provided the
-            // appointment itself has not started yet.
-           // Allow a small grace period for delayed polling or a brief restart.
             const gracePeriodStart = new Date(
                 now.getTime() - 2 * CHECK_INTERVAL_MS
             );
 
-            // Skip reminders that are too early or were missed by more than
-            // the allowed grace period. Never remind for a started appointment.
             if (
                 reminderAt > now ||
                 reminderAt < gracePeriodStart ||
@@ -105,6 +359,7 @@ const checkAppointmentReminders = async () => {
             ) {
                 continue;
             }
+
             if (!appointment.patient?.userId) continue;
 
             try {
@@ -128,8 +383,15 @@ const checkAppointmentReminders = async () => {
                 );
             }
         }
+
+        // Run the missed appointment check using the same scheduler.
+        await checkMissedAppointments(now);
+
     } catch (error) {
-        console.error("Appointment reminder check failed:", error.message);
+        console.error(
+            "Appointment reminder check failed:",
+            error.message
+        );
     } finally {
         checkInProgress = false;
     }
@@ -149,13 +411,15 @@ const startAppointmentReminderService = () => {
         });
     }, CHECK_INTERVAL_MS);
 
-    // Keep the timer from preventing graceful process exit.
     reminderTimer.unref();
 
-    console.log("Appointment reminder service started.");
+    console.log(
+        "Appointment reminder and missed appointment services started."
+    );
 };
 
 module.exports = {
     startAppointmentReminderService,
-    checkAppointmentReminders
+    checkAppointmentReminders,
+    checkMissedAppointments
 };
