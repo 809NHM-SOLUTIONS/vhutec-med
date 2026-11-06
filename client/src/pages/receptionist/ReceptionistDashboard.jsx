@@ -15,6 +15,8 @@ import {
 // The api file is src/api/api.js (this page is src/pages/receptionist/).
 import {
   callNextPatient,
+  callSpecificPatient,
+  updateQueueStatus,
   checkInAppointment,
   fetchReceptionAppointments,
   fetchReceptionOverview,
@@ -31,6 +33,7 @@ createAppointment,
 } from "../../api/api";
 
 import "./ReceptionistDashboard.css";
+import "./manageQueue.css";
 
 import { io } from "socket.io-client";
 
@@ -45,7 +48,7 @@ const NAVIGATION = [
   { label: "Book Appointment", icon: FiCalendar },
   { label: "Queue", icon: FiClock },
   { label: "Patients", icon: FiUsers },
-  { label: "Check-In", icon: FiUserCheck },
+  { label: "Manage Queue", icon: FiUserCheck },
   { label: "Notifications", icon: FiBell },
 ];
 
@@ -453,7 +456,7 @@ const activeAppointments = (data?.appointments || []).filter(
 
                     <button
                       className="reception-card-link"
-                      onClick={() => onNavigate("Queue")}
+                      onClick={() => onNavigate("Manage Queue")}
                     >
                       Manage queue
                     </button>
@@ -607,7 +610,7 @@ const activeAppointments = (data?.appointments || []).filter(
               <div className="reception-quick-actions">
                 <button
                   className="reception-action"
-                  onClick={() => onNavigate("Check-In")}
+                  onClick={() => onNavigate("Manage Queue")}
                 >
                   <FiUserCheck />
                   <span>Check In Patient</span>
@@ -623,7 +626,7 @@ const activeAppointments = (data?.appointments || []).filter(
 
                 <button
                   className="reception-action"
-                  onClick={() => onNavigate("Queue")}
+                  onClick={() => onNavigate("Manage Queue")}
                 >
                   <FiClock />
                   <span>Manage Queue</span>
@@ -1098,19 +1101,16 @@ const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
   );
 };
 
+// Read-only view of today's queue. All actions live in Manage Queue.
 const QueueSection = () => {
-  const { data, loading, error, reload } = useLiveData(
-    fetchReceptionQueue,
-    REFRESH_MS
-  );
-  const action = useAction(reload);
+  const { data, loading, error } = useLiveData(fetchReceptionQueue, REFRESH_MS);
   const stats = data?.stats;
 
   return (
     <>
       <SectionHeader
         title="Patient Queue"
-        text="Monitor and manage patients currently waiting at the hospital."
+        text="Live view of patients currently in today's queue."
       />
 
       <DataState loading={loading} error={error} data={data}>
@@ -1132,11 +1132,7 @@ const QueueSection = () => {
               <StatCard
                 icon={FiClock}
                 label="Average Wait"
-               value={
-  stats.avgWaitMinutes === null
-    ? "-"
-    : `${stats.avgWaitMinutes} min`
-}
+                value={stats.avgWaitMinutes === null ? "-" : `${stats.avgWaitMinutes} min`}
                 note="Check-in to being called"
               />
             </section>
@@ -1147,11 +1143,7 @@ const QueueSection = () => {
                   <h3>Live Patient Queue</h3>
                   <p>Current queue position and consultation status.</p>
                 </div>
-
-                <CallNextButton action={action} waiting={stats.waiting} />
               </div>
-
-              <Notice notice={action.notice} />
 
               <div className="reception-workspace-list">
                 {data.queue.length > 0 ? (
@@ -1166,9 +1158,17 @@ const QueueSection = () => {
                         <span>
                           {fileNumber(entry.patientNumber)} | {entry.doctorName} |{" "}
                           {entry.department}
+                          {entry.checkedInAt ? ` | Arrived ${formatClock(entry.checkedInAt)}` : ""}
+                          {entry.calledAt ? ` | Called ${formatClock(entry.calledAt)}` : ""}
                         </span>
                       </div>
-                      <StatusBadge status={queueStatus(entry.status)} />
+                      <StatusBadge
+                        status={
+                          entry.appointmentStatus === "CANCELLED"
+                            ? { label: "Cancelled", className: "cancelled" }
+                            : queueStatus(entry.status)
+                        }
+                      />
                     </div>
                   ))
                 ) : (
@@ -1269,97 +1269,262 @@ const PatientsSection = () => {
   );
 };
 
-const CheckInSection = () => {
+const QUEUE_FILTERS = [
+  { key: "ALL", label: "All" },
+  { key: "WAITING", label: "Waiting" },
+  { key: "CALLED", label: "Called" },
+  { key: "IN_CONSULTATION", label: "In Consultation" },
+  { key: "COMPLETED", label: "Completed" },
+];
+
+// Order in the Manage Queue list: patients being seen first, finished last.
+const STATUS_RANK = { IN_CONSULTATION: 0, CALLED: 1, WAITING: 2, COMPLETED: 3 };
+
+// The one step a patient can take next, and the button that does it.
+const ROW_ACTIONS = {
+  WAITING: { label: "Call", busyLabel: "Calling...", status: "CALLED" },
+  CALLED: {
+    label: "Start consultation",
+    busyLabel: "Starting...",
+    status: "IN_CONSULTATION",
+  },
+  IN_CONSULTATION: { label: "Complete", busyLabel: "Completing...", status: "COMPLETED" },
+};
+
+const ManageQueueSection = () => {
   const { data, loading, error, reload } = useLiveData(
-    fetchReceptionAppointments,
-    60000
+    fetchReceptionOverview,
+    15000
   );
   const action = useAction(reload);
+  const [filter, setFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
 
-  const arrivedStatuses = ["CHECKED_IN", "IN_PROGRESS", "COMPLETED"];
-  const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
-const appointments = (data?.appointments || []).filter(
-  (appointment) => isActiveAppointment(appointment, data?.date)
-);
+  const queue = data?.queueAll || data?.queue || [];
+  const isCancelled = (entry) => entry.appointmentStatus === "CANCELLED";
+  const count = (status) => queue.filter((e) => e.status === status && !isCancelled(e)).length;
 
-  const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-
-  const arrivalStatus = (a) => {
-    if (arrivedStatuses.includes(a.status)) {
-      return { label: "Checked In", className: "checked" };
-    }
-    const start = startMinutes(a.timeSlot);
-    if (start !== null && start < nowMinutes) {
-      return { label: "Late", className: "pending" };
-    }
-    return { label: "Expected", className: "waiting" };
+  const counts = {
+    ALL: queue.filter((e) => !isCancelled(e)).length,
+    WAITING: count("WAITING"),
+    CALLED: count("CALLED"),
+    IN_CONSULTATION: count("IN_CONSULTATION"),
+    COMPLETED: count("COMPLETED"),
   };
 
-  const lateCount = appointments.filter(
-    (a) => arrivalStatus(a).label === "Late"
-  ).length;
+  // Same rule the server uses for Call Next.
+  const nextUp = queue
+    .filter((e) => e.status === "WAITING" && !isCancelled(e))
+    .sort((a, b) => a.queueNumber - b.queueNumber)[0];
+
+  const term = search.trim().toLowerCase();
+  const matchesSearch = (text) => !term || text.toLowerCase().includes(term);
+
+  const rows = queue
+    .filter((e) => filter === "ALL" || e.status === filter)
+    .filter((e) =>
+      matchesSearch(`${e.patientName} ${e.patientNumber || ""} ${e.doctorName}`)
+    )
+    .sort(
+      (a, b) =>
+        (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9) ||
+        a.queueNumber - b.queueNumber
+    );
+
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const arrivals = (data?.appointments || [])
+    .filter((a) => ["PENDING", "CONFIRMED"].includes(a.status))
+    .filter((a) =>
+      matchesSearch(`${a.patientName} ${a.patientNumber || ""} ${a.doctorName}`)
+    );
+
+  const isLate = (a) => {
+    const start = startMinutes(a.timeSlot);
+    return start !== null && start < nowMinutes;
+  };
 
   return (
     <>
       <SectionHeader
-        title="Patient Check-In"
-        text="Manage arriving patients and verify today's appointments."
+        title="Manage Queue"
+        text="Check patients in, call them and move them through their consultation."
       />
 
       <DataState loading={loading} error={error} data={data}>
         {data && (
           <>
             <section className="reception-stats">
-              <StatCard
-                icon={FiUserCheck}
-                label="Checked In Today"
-                value={data.stats.arrived}
-                note={`${percent(data.stats.arrived, data.stats.total)}% of appointments`}
-              />
+              <StatCard icon={FiUsers} label="Waiting" value={counts.WAITING} note="In the queue now" />
+              <StatCard icon={FiBell} label="Called" value={counts.CALLED} note="On their way" />
               <StatCard
                 icon={FiClock}
-                label="Expected Arrivals"
-                value={data.stats.remaining}
-                note="Remaining today"
+                label="In Consultation"
+                value={counts.IN_CONSULTATION}
+                note="With a doctor"
               />
               <StatCard
-                icon={FiCalendar}
-                label="Late Arrivals"
-                value={lateCount}
-                note="Needs attention"
+                icon={FiCheckCircle}
+                label="Completed Today"
+                value={counts.COMPLETED}
+                note="Consultations finished"
               />
             </section>
 
-            <section className="reception-card">
-              <div className="reception-card-header">
-                <div>
-                  <h3>Today's Patient Arrivals</h3>
-                  <p>Appointment verification and check-in status.</p>
+            <Notice notice={action.notice} />
+
+            <div className="mq-layout">
+              <section className="reception-card mq-queue" aria-label="Live queue">
+                <div className="reception-card-header">
+                  <div>
+                    <h3>Live Queue</h3>
+                    <p>Update each patient as they move through the visit.</p>
+                  </div>
+                  <CallNextButton action={action} waiting={nextUp ? 1 : 0} />
                 </div>
-              </div>
 
-              <Notice notice={action.notice} />
+                <div className="mq-next">
+                  {nextUp ? (
+                    <>
+                      <span className="mq-next-label">Next up</span>
+                      <strong>
+                        #{String(nextUp.queueNumber).padStart(2, "0")} {nextUp.patientName}
+                      </strong>
+                      <span>{nextUp.doctorName}</span>
+                    </>
+                  ) : (
+                    <span className="mq-next-label">No patients are waiting.</span>
+                  )}
+                </div>
 
-              <div className="reception-workspace-list">
-                {appointments.length > 0 ? (
-                  appointments.map((a) => (
-                    <div className="reception-workspace-row" key={a.id}>
-                      <div>
-                        <strong>{a.patientName}</strong>
-                        <span>
-                          {a.timeSlot} | {a.department} | {a.doctorName}
-                          {a.queueNumber
-                            ? ` | Queue #${String(a.queueNumber).padStart(2, "0")}`
-                            : ""}
-                        </span>
-                      </div>
+                <div className="mq-filters" role="group" aria-label="Filter queue by status">
+                  {QUEUE_FILTERS.map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      className={`mq-filter${filter === f.key ? " active" : ""}`}
+                      aria-pressed={filter === f.key}
+                      onClick={() => setFilter(f.key)}
+                    >
+                      {f.label} <span>{counts[f.key]}</span>
+                    </button>
+                  ))}
+                </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        {canCheckIn(a) && (
+                <div className="mq-list">
+                  {rows.length > 0 ? (
+                    rows.map((entry) => {
+                      const step = ROW_ACTIONS[entry.status];
+                      const cancelled = isCancelled(entry);
+                      const key = `move-${entry.queueId}`;
+                      const busyHere = action.busyKey === key;
+
+                      return (
+                        <div
+                          className={`mq-row${cancelled ? " cancelled" : ""}`}
+                          key={entry.queueId ?? entry.id}
+                        >
+                          <div className="mq-number">
+                            {String(entry.queueNumber).padStart(2, "0")}
+                          </div>
+
+                          <div className="mq-info">
+                            <strong>{entry.patientName}</strong>
+                            <span>
+                              {fileNumber(entry.patientNumber)} | {entry.doctorName} |{" "}
+                              {entry.department}
+                            </span>
+                            <span>
+                              {entry.timeSlot ? `Slot ${entry.timeSlot}` : ""}
+                              {entry.checkedInAt ? ` | Arrived ${formatClock(entry.checkedInAt)}` : ""}
+                              {entry.calledAt ? ` | Called ${formatClock(entry.calledAt)}` : ""}
+                            </span>
+                          </div>
+
+                          <div className="mq-actions">
+                            <StatusBadge
+                              status={
+                                cancelled
+                                  ? { label: "Cancelled", className: "cancelled" }
+                                  : queueStatus(entry.status)
+                              }
+                            />
+                            {step && !cancelled && (
+                              <button
+                                type="button"
+                                className="reception-search-button"
+                                aria-label={`${step.label} ${entry.patientName}`}
+                                disabled={action.busy}
+                                style={busyStyle(action.busy)}
+                                onClick={() =>
+                                  action.run(
+                                    key,
+                                    `Updating ${entry.patientName}...`,
+                                    () =>
+                                      entry.status === "WAITING"
+                                        ? callSpecificPatient(entry.queueId)
+                                        : updateQueueStatus(entry.queueId, step.status)
+                                  )
+                                }
+                              >
+                                {busyHere ? step.busyLabel : step.label}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p style={stateStyle}>
+                      {queue.length === 0
+                        ? "No patients in the queue today."
+                        : "No patients match this view."}
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <section className="reception-card mq-arrivals" aria-label="Expected arrivals">
+                <div className="reception-card-header">
+                  <div>
+                    <h3>Check In</h3>
+                    <p>Today's patients who have not arrived yet.</p>
+                  </div>
+                </div>
+
+                <div className="reception-search-box mq-search">
+                  <FiSearch />
+                  <input
+                    type="text"
+                    placeholder="Search patient or doctor..."
+                    aria-label="Search patients"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </div>
+
+                <div className="mq-list">
+                  {arrivals.length > 0 ? (
+                    arrivals.map((a) => (
+                      <div className="mq-row" key={a.id}>
+                        <div className="mq-info">
+                          <strong>{a.patientName}</strong>
+                          <span>
+                            {a.timeSlot} | {a.department} | {a.doctorName}
+                          </span>
+                        </div>
+
+                        <div className="mq-actions">
+                          <StatusBadge
+                            status={
+                              isLate(a)
+                                ? { label: "Late", className: "pending" }
+                                : { label: "Expected", className: "waiting" }
+                            }
+                          />
                           <button
                             type="button"
                             className="reception-search-button"
+                            aria-label={`Check in ${a.patientName}`}
                             disabled={action.busy}
                             style={busyStyle(action.busy)}
                             onClick={() =>
@@ -1370,21 +1535,19 @@ const appointments = (data?.appointments || []).filter(
                               )
                             }
                           >
-                            {action.busyKey === `checkin-${a.id}`
-                              ? "Checking in..."
-                              : "Check In"}
+                            {action.busyKey === `checkin-${a.id}` ? "Checking in..." : "Check In"}
                           </button>
-                        )}
-
-                        <StatusBadge status={arrivalStatus(a)} />
+                        </div>
                       </div>
-                    </div>
-                  ))
-                ) : (
-                  <p style={stateStyle}>No appointments to check in today.</p>
-                )}
-              </div>
-            </section>
+                    ))
+                  ) : (
+                    <p style={stateStyle}>
+                      {term ? "No matching patients to check in." : "Everyone expected today has checked in."}
+                    </p>
+                  )}
+                </div>
+              </section>
+            </div>
           </>
         )}
       </DataState>
@@ -1525,7 +1688,7 @@ const ReceptionistDashboard = () => {
           {activeSection === "Appointments" && <AppointmentsSection />}
           {activeSection === "Queue" && <QueueSection />}
           {activeSection === "Patients" && <PatientsSection />}
-          {activeSection === "Check-In" && <CheckInSection />}
+          {activeSection === "Manage Queue" && <ManageQueueSection />}
 
 
 {activeSection === "Notifications" && (

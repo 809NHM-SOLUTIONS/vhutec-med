@@ -1,0 +1,147 @@
+/* Manage Queue page. Only layout for the new page; cards, stat cards,
+   status badges and buttons come from ReceptionistDashboard.css. */
+
+.mq-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.mq-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.mq-next-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--reception-muted, #64748b);
+}
+
+.mq-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.mq-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mq-filter span {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.18);
+  font-size: 12px;
+  text-align: center;
+}
+
+.mq-filter.active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+.mq-filter.active span {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.mq-filter:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+.mq-search {
+  margin-bottom: 14px;
+}
+
+.mq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mq-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 12px;
+}
+
+.mq-row.cancelled {
+  opacity: 0.6;
+}
+
+.mq-number {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.mq-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mq-info span {
+  font-size: 13px;
+  color: var(--reception-muted, #64748b);
+  overflow-wrap: anywhere;
+}
+
+.mq-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 1100px) {
+  .mq-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .mq-row {
+    flex-wrap: wrap;
+  }
+
+  .mq-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
