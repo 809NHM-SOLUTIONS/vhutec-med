@@ -1,6 +1,7 @@
 
 const prisma = require("../prisma");
 
+
 const getNotifications = async (req, res) => {
     try {
         const userId = Number(req.user.userId);
@@ -9,13 +10,40 @@ const getNotifications = async (req, res) => {
             100
         );
 
-        const notifications = await prisma.notification.findMany({
-            where: { userId },
-            orderBy: { createdAt: "desc" },
-            take
-        });
+        const [recentNotifications, unreadNotifications] =
+            await Promise.all([
+                prisma.notification.findMany({
+                    where: { userId },
+                    orderBy: { createdAt: "desc" },
+                    take
+                }),
+                prisma.notification.findMany({
+                    where: {
+                        userId,
+                        readAt: null
+                    },
+                    orderBy: { createdAt: "desc" }
+                })
+            ]);
 
-        return res.json({ success: true, data: notifications });
+        const notificationMap = new Map();
+
+        [...unreadNotifications, ...recentNotifications].forEach(
+            (notification) => {
+                notificationMap.set(notification.id, notification);
+            }
+        );
+
+        const notifications = [...notificationMap.values()].sort(
+            (a, b) =>
+                new Date(b.createdAt).getTime() -
+                new Date(a.createdAt).getTime()
+        );
+
+        return res.json({
+            success: true,
+            data: notifications
+        });
     } catch (error) {
         console.error("Get notifications error:", error);
         return res.status(500).json({
@@ -24,6 +52,7 @@ const getNotifications = async (req, res) => {
         });
     }
 };
+
 
 const getUnreadCount = async (req, res) => {
     try {
