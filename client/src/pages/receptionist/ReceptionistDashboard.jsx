@@ -25,6 +25,11 @@ import {
   fetchNotifications,
   fetchUnreadNotificationCount,
   markNotificationAsRead,
+  fetchDepartments,
+fetchDoctors,
+fetchDoctorDepartments,
+fetchBookedSlots,
+createAppointment,
 } from "../../api/api";
 
 import "./ReceptionistDashboard.css";
@@ -32,12 +37,15 @@ import "./manageQueue.css";
 
 import { io } from "socket.io-client";
 
+import TimeSlotPicker from "../patient/Timeslotpicker";
+
 import NotificationBell from "../../components/notifications/NotificationBell";
 import useNotifications from "../../components/notifications/useNotifications";
 
 const NAVIGATION = [
   { label: "Dashboard", icon: FiGrid },
   { label: "Appointments", icon: FiCalendar },
+  { label: "Book Appointment", icon: FiCalendar },
   { label: "Queue", icon: FiClock },
   { label: "Patients", icon: FiUsers },
   { label: "Manage Queue", icon: FiUserCheck },
@@ -640,9 +648,335 @@ const activeAppointments = (data?.appointments || []).filter(
   );
 };
 
+
+const ReceptionistBookingForm = ({ onBooked, onClose }) => {
+  const [search, setSearch] = useState("");
+  const [patients, setPatients] = useState([]);
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [departments, setDepartments] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [form, setForm] = useState({
+    departmentId: "",
+    doctorId: "",
+    date: "",
+    time: "",
+    reason: "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [slotRefreshKey, setSlotRefreshKey] = useState(0);
+
+  // Copy the exact TIME_SLOTS array from PatientDashboard.jsx.
+  // Replace this placeholder before using the form.
+  const TIME_SLOTS = [
+  "08:00",
+  "09:00",
+  "09:30",
+  "10:00",
+  "11:00",
+  "13:00",
+  "14:00",
+  "15:00",
+];
+
+  useEffect(() => {
+    let active = true;
+
+    Promise.all([fetchDepartments(), fetchDoctors()])
+      .then(([departmentResult, doctorResult]) => {
+        if (!active) return;
+
+        setDepartments(
+          Array.isArray(departmentResult)
+            ? departmentResult
+            : departmentResult.data || []
+        );
+        setDoctors(
+          Array.isArray(doctorResult)
+            ? doctorResult
+            : doctorResult.data || []
+        );
+      })
+      .catch(() => {
+        if (active) setError("Unable to load departments and doctors.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!search.trim()) {
+      setPatients([]);
+      return;
+    }
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const result = await fetchReceptionPatients(search.trim());
+        if (!active) return;
+
+        const payload = result.data ?? result;
+        const records = Array.isArray(payload)
+          ? payload
+          : payload.patients || [];
+
+        setPatients(records);
+      } catch {
+        if (active) setError("Unable to search for patients.");
+      } finally {
+        if (active) setSearching(false);
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [search]);
+
+  const availableDoctors = doctors.filter((doctor) =>
+    (doctor.departments || []).some(
+      (assignment) =>
+        Number(assignment.departmentId) === Number(form.departmentId)
+    )
+  );
+
+  const updateForm = (field, value) => {
+    setForm((previous) => ({
+      ...previous,
+      [field]: value,
+      ...(field === "departmentId"
+        ? { doctorId: "", time: "" }
+        : {}),
+      ...(field === "doctorId" || field === "date"
+        ? { time: "" }
+        : {}),
+    }));
+  };
+
+  const submitBooking = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (
+      !selectedPatient ||
+      !form.departmentId ||
+      !form.doctorId ||
+      !form.date ||
+      !form.time ||
+      !form.reason.trim()
+    ) {
+      setError("Please complete all booking details.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await createAppointment({
+        patientId: Number(selectedPatient.id),
+        departmentId: Number(form.departmentId),
+        doctorId: Number(form.doctorId),
+        date: form.date,
+        timeSlot: form.time,
+        reason: form.reason.trim(),
+      });
+
+      setSuccess(
+        `Appointment booked for ${selectedPatient.firstName} ${selectedPatient.lastName}. Status: Pending.`
+      );
+
+      setForm({
+        departmentId: "",
+        doctorId: "",
+        date: "",
+        time: "",
+        reason: "",
+      });
+      setSelectedPatient(null);
+      setSearch("");
+      setPatients([]);
+      await onBooked();
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          "Unable to book appointment. Please try again."
+      );
+      setSlotRefreshKey((key) => key + 1);
+      updateForm("time", "");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="reception-card">
+      <div className="reception-card-header">
+        <div>
+          <h3>Book Appointment for Patient</h3>
+          <p>Assist an existing patient with an appointment.</p>
+        </div>
+        <button
+          type="button"
+          className="reception-search-button"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+
+      {error && <p role="alert">{error}</p>}
+      {success && <p role="status">{success}</p>}
+
+      <form onSubmit={submitBooking} className="reception-booking-form">
+        <label htmlFor="reception-patient-search">Find Patient</label>
+        <input
+          id="reception-patient-search"
+          type="search"
+          placeholder="Search by name, patient number or ID number"
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setSelectedPatient(null);
+          }}
+        />
+
+        {searching && <p>Searching patients...</p>}
+
+        {!selectedPatient && patients.length > 0 && (
+          <div className="reception-booking-results">
+            {patients.map((patient) => (
+              <button
+                key={patient.id}
+                type="button"
+                className="reception-search-button"
+                onClick={() => {
+                  setSelectedPatient(patient);
+                  setPatients([]);
+                }}
+              >
+                {patient.firstName} {patient.lastName}
+                {" — "}
+                {patient.patientNumber || `Patient #${patient.id}`}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedPatient && (
+          <p>
+            Selected: <strong>{selectedPatient.firstName} {selectedPatient.lastName}</strong>
+            {" — "}{selectedPatient.patientNumber}
+          </p>
+        )}
+
+        <label htmlFor="reception-booking-department">Department</label>
+        <select
+          id="reception-booking-department"
+          value={form.departmentId}
+          onChange={(event) => updateForm("departmentId", event.target.value)}
+          required
+        >
+          <option value="">Select department</option>
+          {departments.map((department) => (
+            <option key={department.id} value={department.id}>
+              {department.name}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="reception-booking-doctor">Doctor</label>
+        <select
+          id="reception-booking-doctor"
+          value={form.doctorId}
+          onChange={(event) => updateForm("doctorId", event.target.value)}
+          disabled={!form.departmentId}
+          required
+        >
+          <option value="">Select doctor</option>
+          {availableDoctors.map((doctor) => (
+            <option key={doctor.id} value={doctor.id}>
+              Dr. {doctor.firstName} {doctor.lastName}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="reception-booking-date">Appointment Date</label>
+        <input
+          id="reception-booking-date"
+          type="date"
+          min={new Date(
+            Date.now() - new Date().getTimezoneOffset() * 60000
+          ).toISOString().slice(0, 10)}
+          value={form.date}
+          onChange={(event) => updateForm("date", event.target.value)}
+          required
+        />
+
+        <label>Available Time Slots</label>
+        <TimeSlotPicker
+          slots={TIME_SLOTS}
+          doctorId={form.doctorId}
+          date={form.date}
+          value={form.time}
+          refreshKey={slotRefreshKey}
+          onChange={(time) => updateForm("time", time)}
+        />
+
+        <label htmlFor="reception-booking-reason">Reason for Visit</label>
+        <textarea
+          id="reception-booking-reason"
+          rows={3}
+          value={form.reason}
+          onChange={(event) => updateForm("reason", event.target.value)}
+          placeholder="Enter reason for appointment"
+          required
+        />
+
+        <button
+          type="submit"
+          className="reception-search-button"
+          disabled={loading || !selectedPatient || !form.time || TIME_SLOTS.length === 0}
+        >
+          {loading ? "Booking..." : "Confirm Appointment"}
+        </button>
+      </form>
+    </section>
+  );
+};
+
+const BookAppointmentSection = ({ onNavigate }) => {
+  const handleBooked = () => {
+    // The booking is already saved by ReceptionistBookingForm.
+    // Stay on this page so the receptionist can see the success message.
+  };
+
+  return (
+    <>
+      {/* <SectionHeader
+        title="Book Appointment"
+        text="Schedule appointments on behalf of patients who need assistance."
+      /> */}
+
+      <ReceptionistBookingForm
+        onBooked={handleBooked}
+        onClose={() => onNavigate("Appointments")}
+      />
+    </>
+  );
+};
+
 const AppointmentsSection = () => {
   const { data, loading, error, reload } = useLiveData(fetchReceptionAppointments, 60000);
   const action = useAction(reload);
+
   const stats = data?.stats;
 
 const activeAppointments = (data?.appointments || []).filter(
@@ -690,13 +1024,15 @@ const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
 
             <section className="reception-card">
               <div className="reception-card-header">
-                <div>
-                  <h3>Today's Appointment Schedule</h3>
-                 <p>{formatLongDate(data.date)} | Reception desk schedule</p>
-                </div>
-              </div>
+  <div>
+    <h3>Today's Appointment Schedule</h3>
+    <p>{formatLongDate(data.date)} | Reception desk schedule</p>
+  </div>
 
-              <Notice notice={action.notice} />
+
+</div>
+
+        <Notice notice={action.notice} />
 
               <div className="reception-table-wrapper">
                 <table className="reception-table">
@@ -713,7 +1049,7 @@ const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
 
                   <tbody>
                     {activeAppointments.length > 0 ? (
-  activeAppointments.map((a) => (
+                activeAppointments.map((a) => (
                         <tr key={a.id}>
                           <td>{a.timeSlot}</td>
                           <td>{a.patientName}</td>
@@ -1346,6 +1682,9 @@ const ReceptionistDashboard = () => {
           {activeSection === "Dashboard" && (
             <OverviewSection onNavigate={handleNavigation} />
           )}
+          {activeSection === "Book Appointment" && (
+  <BookAppointmentSection onNavigate={handleNavigation} />
+)}
           {activeSection === "Appointments" && <AppointmentsSection />}
           {activeSection === "Queue" && <QueueSection />}
           {activeSection === "Patients" && <PatientsSection />}

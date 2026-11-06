@@ -292,6 +292,31 @@ useEffect(() => {
   const getFileNumber = (patient) =>
     patient?.patientNumber || "Not assigned";
 
+
+const getPatientAge = (patient) => {
+  if (!patient?.dob) return "Not available";
+
+  const birthDate = new Date(patient.dob);
+
+  if (Number.isNaN(birthDate.getTime())) {
+    return "Not available";
+  }
+
+  const today = new Date();
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+
+  const birthdayPassed =
+    today.getMonth() > birthDate.getMonth() ||
+    (today.getMonth() === birthDate.getMonth() &&
+      today.getDate() >= birthDate.getDate());
+
+  if (!birthdayPassed) age--;
+
+  return age >= 0 ? age : "Not available";
+};
+
+
   const getStatusLabel = (status) => {
     if (!status) return "Not available";
 
@@ -698,102 +723,140 @@ const handleCompleteConsultation = async (appointment, notes) => {
 
 
 
-  const renderQueue = () => {
-    const queuedAppointments = appointmentsData
-      .filter((appointment) => appointment.queue)
-      .sort(
-        (a, b) =>
-          (a.queue?.queueNumber ?? Infinity) -
-          (b.queue?.queueNumber ?? Infinity)
-      );
 
-    return (
-      <>
-        <div className="doctor-section-header">
-          <h2>Patient Queue</h2>
-          <p>Monitor queue records linked to your appointments.</p>
-        </div>
+const renderQueue = () => {
+  const queuedAppointments = appointmentsData
+    .filter((appointment) => appointment.queue)
+    .sort(
+      (a, b) =>
+        (a.queue?.queueNumber ?? Infinity) -
+        (b.queue?.queueNumber ?? Infinity)
+    );
 
-        <section className="doctor-stats">
-          <div className="doctor-stat-card">
-            <div className="doctor-stat-icon"><FiUsers /></div>
+  const waitingCount = queuedAppointments.filter(
+    (a) => a.queue?.status === "WAITING"
+  ).length;
+
+  const consultationCount = queuedAppointments.filter(
+    (a) => a.queue?.status === "IN_CONSULTATION"
+  ).length;
+
+  const completedCount = queuedAppointments.filter(
+    (a) => a.queue?.status === "COMPLETED"
+  ).length;
+
+  return (
+    <div className="doctor-queue-page">
+      <div className="doctor-section-header">
+        <h2>Patient Queue</h2>
+        <p>
+          Monitor patient queue activity and consultation progress.
+        </p>
+      </div>
+
+      <section className="doctor-queue-stats">
+        <div className="doctor-queue-stat">
+          <div className="doctor-queue-stat-heading">
             <span>Patients Waiting</span>
-            <h3>{waitingAppointments.length}</h3>
-            <span className="doctor-stat-change">Current queue status</span>
-          </div>
-
-          <div className="doctor-stat-card">
-            <div className="doctor-stat-icon"><FiUserCheck /></div>
-            <span>In Consultation</span>
-            <h3>
-              {appointmentsData.filter(
-                (a) => a.queue?.status === "IN_CONSULTATION"
-              ).length}
-            </h3>
-            <span className="doctor-stat-change">Currently being attended</span>
-          </div>
-
-          <div className="doctor-stat-card">
-            <div className="doctor-stat-icon"><FiCheckCircle /></div>
-            <span>Completed</span>
-            <h3>{completedAppointments.length}</h3>
-            <span className="doctor-stat-change">Completed appointments</span>
-          </div>
-        </section>
-
-        <section className="doctor-card">
-          <div className="doctor-card-header">
-            <div>
-              <h3>Consultation Queue</h3>
-              <p>Actual queue records from the database.</p>
+            <div className="doctor-queue-stat-icon">
+              <FiUsers />
             </div>
           </div>
+          <strong>{waitingCount}</strong>
+          <small>Current waiting queue</small>
+        </div>
 
-          <div className="doctor-workspace-list">
-            {queuedAppointments.map((appointment) => (
-              <div className="doctor-workspace-row" key={appointment.id}>
-                <div>
-                  <strong>
-                    #{String(appointment.queue.queueNumber).padStart(2, "0")}
-                    {" | "}
-                    {getPatientName(appointment.patient)}
-                  </strong>
+        <div className="doctor-queue-stat">
+          <div className="doctor-queue-stat-heading">
+            <span>In Consultation</span>
+            <div className="doctor-queue-stat-icon">
+              <FiActivity />
+            </div>
+          </div>
+          <strong>{consultationCount}</strong>
+          <small>Currently being attended</small>
+        </div>
 
-                  <span>
-                    {getFileNumber(appointment.patient)}
-                    {" | "}
-                    {appointment.reason || "No reason provided"}
-                    {" | "}
-                    {getAppointmentTime(appointment)}
-                  </span>
-                </div>
+        <div className="doctor-queue-stat">
+          <div className="doctor-queue-stat-heading">
+            <span>Completed</span>
+            <div className="doctor-queue-stat-icon">
+              <FiCheckCircle />
+            </div>
+          </div>
+          <strong>{completedCount}</strong>
+          <small>Completed queue records</small>
+        </div>
+      </section>
 
-                
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    flexWrap: "wrap",
-                  }}
+      <section className="doctor-queue-panel">
+        <div className="doctor-queue-panel-header">
+          <div>
+            <h3>Consultation Queue</h3>
+            <p>
+              Patient queue records and consultation status.
+            </p>
+          </div>
+          <span className="doctor-queue-count">
+            {queuedAppointments.length} records
+          </span>
+        </div>
+
+        {queuedAppointments.length === 0 ? (
+          <div className="doctor-queue-empty">
+            <FiUsers />
+            <h4>No patients in the queue</h4>
+            <p>
+              Checked-in patients will appear here when
+              queue records become available.
+            </p>
+          </div>
+        ) : (
+          <div className="doctor-queue-list">
+            {queuedAppointments.map((appointment) => {
+              const status = appointment.queue?.status;
+              const patient = appointment.patient;
+
+              return (
+                <article
+                  className="doctor-queue-item"
+                  key={appointment.id}
                 >
-                  <span
-                    className={`doctor-status ${getStatusClass(
-                      appointment.queue.status
-                    )}`}
-                  >
-                    {getStatusLabel(appointment.queue.status)}
-                  </span>
+                  <div className="doctor-queue-number">
+                    #
+                    {String(
+                      appointment.queue.queueNumber
+                    ).padStart(2, "0")}
+                  </div>
 
-                  {appointment.queue.status === "CALLED" && (
+                  <div className="doctor-queue-patient">
+                    <strong>{getPatientName(patient)}</strong>
+                    <span>{getFileNumber(patient)}</span>
+                    <p>
+                      {appointment.reason ||
+                        "General consultation"}
+                    </p>
+                  </div>
+
+                  <div className="doctor-queue-meta">
+                    <span className="doctor-queue-time">
+                      <FiClock />
+                      {getAppointmentTime(appointment)}
+                    </span>
+
+                    <span
+                      className={`doctor-status ${getStatusClass(
+                        status
+                      )}`}
+                    >
+                      {getStatusLabel(status)}
+                    </span>
+                  </div>
+
+                  {status === "CALLED" && (
                     <button
                       type="button"
-                      className="primary-button"
-                      style={{
-                        padding: "8px 12px",
-                        fontSize: "12px",
-                        height: "auto",
-                      }}
+                      className="primary-button doctor-queue-action"
                       onClick={() =>
                         handleStartConsultation(appointment)
                       }
@@ -801,19 +864,16 @@ const handleCompleteConsultation = async (appointment, notes) => {
                       Start Consultation
                     </button>
                   )}
-                </div>
-
-              </div>
-            ))}
-
-            {queuedAppointments.length === 0 && (
-              <p>No queue records are currently available.</p>
-            )}
+                </article>
+              );
+            })}
           </div>
-        </section>
-      </>
-    );
-  };
+        )}
+      </section>
+    </div>
+  );
+};
+
 
 
 
@@ -857,61 +917,15 @@ const renderConsultations = () => {
 
   return (
     <>
-      <div className="doctor-section-header">
-        <h2>Consultations</h2>
-        <p>Review current and recently completed patient consultations.</p>
-      </div>
+      {/* <div className="doctor-section-header">
+  <h2>Consultations</h2>
+  <p>Manage your active patient consultation and clinical records.</p>
+</div> */}
 
-      <section className="doctor-card" style={{ marginBottom: "20px" }}>
-  <div className="doctor-card-header">
-    <div>
-      <h3>Patients Ready for Consultation</h3>
-      <p>Start consultations for patients called by Reception.</p>
-    </div>
-    <span className="doctor-status checked">
-      {calledAppointments.length} Called
-    </span>
-  </div>
 
-  {calledAppointments.length === 0 ? (
-    <p>No called patients are waiting to begin a consultation.</p>
-  ) : (
-    <div className="doctor-workspace-list">
-      {calledAppointments.map((appointment) => (
-        <div className="doctor-workspace-row" key={appointment.id}>
-          <div>
-            <strong>{getPatientName(appointment.patient)}</strong>
-            <span>
-              File: {getFileNumber(appointment.patient)} · Queue #
-              {appointment.queue?.queueNumber ?? "—"}
-            </span>
-            <span>
-              {appointment.reason || "General consultation"}
-            </span>
-          </div>
 
-          <button
-            type="button"
-            className="primary-button"
-            disabled={Boolean(currentAppointment)}
-            onClick={() => handleStartConsultation(appointment)}
-          >
-            Start Consultation
-          </button>
-        </div>
-      ))}
-    </div>
-  )}
-
-  {currentAppointment && (
-    <p style={{ marginTop: "12px" }}>
-      Complete the current consultation before starting another patient.
-    </p>
-  )}
-</section>
-
-      <section className="doctor-grid">
-        <div className="doctor-card">
+      <section className="doctor-consultations-workspace">
+        <div className="doctor-card doctor-consultation-workspace-card">
           <div className="doctor-card-header">
             <div>
               <h3>Current Consultation</h3>
@@ -925,49 +939,42 @@ const renderConsultations = () => {
 
           {currentAppointment ? (
             <div className="doctor-consultation">
-              <div className="doctor-consultation-top">
-                <div className="doctor-consultation-patient">
-                  <div className="doctor-consultation-avatar">
-                    {getPatientInitials(currentAppointment.patient)}
-                  </div>
 
-                  <div>
-                    <strong>
-                      {getPatientName(currentAppointment.patient)}
-                    </strong>
-                    <span>
-                      {getFileNumber(currentAppointment.patient)}
-                    </span>
-                  </div>
-                </div>
 
-                <span className="doctor-consultation-time">
-                  {currentAppointment.timeSlot || "Time unavailable"}
-                </span>
-              </div>
 
-              <div className="doctor-consultation-details">
-                <div className="doctor-detail-item">
-                  <span>Reason</span>
-                  <strong>
-                    {currentAppointment.reason || "General consultation"}
-                  </strong>
-                </div>
+<div className="doctor-consultation-info-row">
+  <div className="doctor-consultation-identity">
+    <div className="doctor-consultation-avatar">
+      {getPatientInitials(currentAppointment.patient)}
+    </div>
 
-                <div className="doctor-detail-item">
-                  <span>Department</span>
-                  <strong>
-                    {currentAppointment.department?.name || "Not assigned"}
-                  </strong>
-                </div>
+    <div className="doctor-consultation-patient-info">
+      <strong>
+        {getPatientName(currentAppointment.patient)}
+      </strong>
+      <span>
+        {getFileNumber(currentAppointment.patient)}
+      </span>
+    </div>
+  </div>
 
-                <div className="doctor-detail-item">
-                  <span>Queue</span>
-                  <strong>
-                    {currentAppointment.queue?.queueNumber ?? "Not assigned"}
-                  </strong>
-                </div>
-              </div>
+  <div className="doctor-consultation-summary-item">
+    <span>Age</span>
+    <strong>
+      {getPatientAge(currentAppointment.patient)}
+    </strong>
+  </div>
+
+  <div className="doctor-consultation-summary-item">
+    <span>Reason for Consultation</span>
+    <strong>
+      {currentAppointment.reason || "General consultation"}
+    </strong>
+  </div>
+</div>
+
+
+
 
 
 <div className="clinical-form">
@@ -1147,111 +1154,10 @@ const renderConsultations = () => {
               called before their consultations can start.
             </p>
           )}
-        </div>
-
-        <div className="doctor-card">
-          <div className="doctor-card-header">
-            <div>
-              <h3>Recent Consultations</h3>
-              <p>Recently completed clinical consultations.</p>
-            </div>
-          </div>
-
-          {consultationsLoading ? (
-            <p>Loading consultations...</p>
-          ) : consultationsError ? (
-            <p role="alert">{consultationsError}</p>
-          ) : recentConsultations.length === 0 ? (
-            <p>No completed consultations are available yet.</p>
-          ) : (
-            <div className="doctor-workspace-list">
-              {recentConsultations.slice(0, 5).map((consultation) => {
-                const patient = getConsultationPatient(consultation);
-
-                return (
-                  <div
-                    className="doctor-workspace-row"
-                    key={consultation.id}
-                  >
-                    <div>
-                      <strong>
-                        {patient
-                          ? getPatientName(patient)
-                          : "Patient information unavailable"}
-                      </strong>
-                      <span>
-                        {getFileNumber(patient)} ·{" "}
-                        {getConsultationDate(consultation)}
-                      </span>
-                    </div>
-
-                    <span className="doctor-status confirmed">
-                      Completed
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                </div>
       </section>
 
-      <section className="doctor-card">
-        <div className="doctor-card-header">
-          <div>
-            <h3>Clinical Notes</h3>
-            <p>Notes saved with consultation records.</p>
-          </div>
-        </div>
 
-        {consultationsLoading ? (
-          <p>Loading clinical notes...</p>
-        ) : consultationsError ? (
-          <p role="alert">{consultationsError}</p>
-        ) : consultations.filter(
-            (consultation) => consultation.notes?.trim()
-          ).length === 0 ? (
-          <p>No clinical notes are available yet.</p>
-        ) : (
-          <div className="doctor-workspace-list">
-            {[...consultations]
-              .filter((consultation) => consultation.notes?.trim())
-              .sort(
-                (a, b) =>
-                  new Date(
-                    b.completedAt || b.startedAt || b.createdAt || 0
-                  ) -
-                  new Date(
-                    a.completedAt || a.startedAt || a.createdAt || 0
-                  )
-              )
-              .slice(0, 5)
-              .map((consultation) => {
-                const patient = getConsultationPatient(consultation);
-
-                return (
-                  <div
-                    className="doctor-workspace-row"
-                    key={consultation.id}
-                  >
-                    <div>
-                      <strong>
-                        {patient
-                          ? getPatientName(patient)
-                          : "Patient information unavailable"}
-                      </strong>
-                      <span>{consultation.notes}</span>
-                    </div>
-
-                    <span>
-                      {getConsultationDate(consultation)}
-                    </span>
-                  </div>
-                );
-              })}
-          </div>
-        )}
-      </section>
     </>
   );
 };
@@ -1303,31 +1209,9 @@ const renderMedicalRecords = () => (
     </section>
 
     <section className="doctor-grid">
-      <div className="doctor-card">
-        <div className="doctor-card-header">
-          <div>
-            <h3>Current Record</h3>
-            <p>Thabo Mokoena | VH-2026-00421</p>
-          </div>
-        </div>
 
-        <div className="doctor-consultation-details">
-          <div className="doctor-detail-item">
-            <span>Last Diagnosis</span>
-            <strong>Upper respiratory infection</strong>
-          </div>
 
-          <div className="doctor-detail-item">
-            <span>Allergies</span>
-            <strong>None recorded</strong>
-          </div>
 
-          <div className="doctor-detail-item">
-            <span>Blood Group</span>
-            <strong>O+</strong>
-          </div>
-        </div>
-      </div>
 
       <div className="doctor-card">
         <div className="doctor-card-header">
@@ -1693,7 +1577,15 @@ setConsultationNotes("");
             </div>
 
             <div className="doctor-patient-list">
-              {readyAppointments.length === 0 && <p>No patients waiting right now.</p>}
+              {readyAppointments.length === 0 && (
+  <div className="doctor-empty-state">
+    <div className="doctor-empty-icon">
+      <FiUsers />
+    </div>
+    <h4>No patients waiting</h4>
+    <p>Patients checked in for consultation will appear here.</p>
+  </div>
+)}
               {readyAppointments.map((appointment) => (
                 <div className="doctor-patient-item" key={appointment.id}>
                   <div className="doctor-patient-avatar">
@@ -1724,149 +1616,69 @@ setConsultationNotes("");
           </div>
 
           {/* CURRENT CONSULTATION BOX */}
-          <div className="doctor-card">
-            <div className="doctor-card-header">
-              <div>
-                <h3>Current Consultation</h3>
-                <p>Patient currently being attended to.</p>
-              </div>
-            </div>
 
-            {currentAppointment ? (
-              <div className="doctor-consultation">
-                <div className="doctor-consultation-top">
-                  <div className="doctor-consultation-patient">
-                    <div className="doctor-consultation-avatar">
-                      {getPatientInitials(currentAppointment.patient)}
-                    </div>
-                    <div>
-                      <strong>{getPatientName(currentAppointment.patient)}</strong>
-                      <span>{getFileNumber(currentAppointment.patient)}</span>
-                    </div>
-                  </div>
-                  <span className="doctor-consultation-time">
-                    {currentAppointment.timeSlot}
-                  </span>
-                </div>
+<div className="doctor-card doctor-dashboard-consultation-card">
+  <div className="doctor-card-header">
+    <div>
+      <h3>Current Consultation</h3>
+      <p>Patient currently being attended to.</p>
+    </div>
 
-                <div className="doctor-consultation-details">
-                  <div className="doctor-detail-item">
-                    <span>Reason</span>
-                    <strong>{currentAppointment.reason || "General Consultation"}</strong>
-                  </div>
-                  <div className="doctor-detail-item">
-                    <span>Department</span>
-                    <strong>{currentAppointment.department?.name}</strong>
-                  </div>
-                  <div className="doctor-detail-item">
-                    <span>Status</span>
-                    <strong>In Consultation</strong>
-                  </div>
-                </div>
+    {currentAppointment && (
+      <span className="doctor-status checked">
+        In Consultation
+      </span>
+    )}
+  </div>
 
-                <div style={{ marginTop: "16px" }}>
-                  <label style={{ fontSize: "12px", fontWeight: "bold", display: "block", marginBottom: "8px" }}>
-                    Clinical Notes
-                  </label>
-                    <textarea
-                    id="consultation-notes"
-                    rows="3"
-                    placeholder="Enter symptoms, diagnosis, and treatment..."
-                    value={consultationNotes}
-                    onChange={(event) => setConsultationNotes(event.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "8px",
-                      border: "1px solid var(--doctor-border)",
-                      fontFamily: "inherit",
-                      fontSize: "13px",
-                      marginBottom: "10px"
-                    }}
-                  />
-
-                  {currentAppointment.queue?.status === "IN_CONSULTATION" && (
-                    <button
-                      className="primary-button"
-                      style={{
-                        padding: "6px 12px",
-                        fontSize: "12px",
-                        height: "auto",
-                      }}
-                      onClick={() =>
-                        handleCompleteConsultation(currentAppointment, consultationNotes)
-                      }
-                    >
-                      Complete Consultation
-                    </button>
-                  )}
-
-                </div>
-
-                <div style={{ marginTop: "18px" }}>
-                <label
-                  htmlFor="consultation-page-notes"
-                  style={{
-                    display: "block",
-                    fontWeight: 600,
-                    marginBottom: "8px",
-                  }}
-                >
-                  Clinical Notes
-                </label>
-
-                <textarea
-                  id="consultation-page-notes"
-                  rows={7}
-                  value={consultationNotes}
-                  onChange={(event) => setConsultationNotes(event.target.value)}
-                  placeholder="Record symptoms, examination findings, diagnosis, treatment, and follow-up..."
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "12px",
-                    borderRadius: "8px",
-                    border: "1px solid var(--doctor-border)",
-                    fontFamily: "inherit",
-                    fontSize: "14px",
-                    resize: "vertical",
-                  }}
-                />
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "10px",
-                    flexWrap: "wrap",
-                    marginTop: "12px",
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={() =>
-                      handleSaveConsultationNotes(currentAppointment, consultationNotes)
-                    }
-                  >
-                    Save Notes
-                  </button>
-
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={() =>
-                      handleCompleteConsultation(currentAppointment, consultationNotes)
-                    }
-                  >
-                    Complete Consultation
-                  </button>
-                </div>
-              </div>
-              </div>
-            ) : (
-               <p>No patient is currently in consultation. Please start a consultation from the waiting list.</p>
-            )}
+  {currentAppointment ? (
+    <div className="doctor-consultation">
+      <div className="doctor-consultation-top">
+        <div className="doctor-consultation-patient">
+          <div className="doctor-consultation-avatar">
+            {getPatientInitials(currentAppointment.patient)}
           </div>
+
+          <div>
+            <strong>
+              {getPatientName(currentAppointment.patient)}
+            </strong>
+
+            <span>
+              {getFileNumber(currentAppointment.patient)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="doctor-dashboard-consultation-reason">
+        <span>Reason for Consultation</span>
+        <strong>
+          {currentAppointment.reason || "General consultation"}
+        </strong>
+      </div>
+
+      <div className="doctor-dashboard-consultation-actions">
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => handleNavigation("Consultations")}
+        >
+          Go to Consultation
+        </button>
+      </div>
+    </div>
+  ) : (
+    <div className="doctor-empty-state">
+      <h4>No active consultation</h4>
+      <p>
+        No patient is currently in consultation.
+        Start a consultation from the Patient Queue.
+      </p>
+    </div>
+  )}
+</div>
+
         </section>
 
         <section className="doctor-card">

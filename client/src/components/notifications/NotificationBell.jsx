@@ -256,6 +256,7 @@ export default function NotificationBell({
   const [bellNotifications, setBellNotifications] = useState([]);
   const [seenIds, setSeenIds] = useState(() => loadSeenIds());
   const wrapperRef = useRef(null);
+  const processingIdsRef = useRef(new Set());
 
   const closeDropdown = () => {
     setOpen(false);
@@ -305,11 +306,10 @@ export default function NotificationBell({
     const currentSeenIds = loadSeenIds();
 
     const unseen = notifications.filter(
-      (notification) =>
-        !notification.readAt &&
-        notification.id != null &&
-        !currentSeenIds.has(String(notification.id))
-    );
+  (notification) =>
+    !notification.readAt &&
+    notification.id != null
+);
 
     if (unseen.length === 0) {
       // Do not repeatedly add IDs while the dropdown is empty.
@@ -324,10 +324,36 @@ export default function NotificationBell({
 
       if (additions.length === 0) return current;
 
-      rememberAsSeen(additions);
+      // rememberAsSeen(additions);
+      // return [...current, ...additions];
+
       return [...current, ...additions];
     });
-  }, [open, loading, notifications]);
+
+    // Mark newly viewed notifications as read in the database.
+
+unseen.forEach((notification) => {
+  const id = String(notification.id);
+
+  if (processingIdsRef.current.has(id)) return;
+
+  processingIdsRef.current.add(id);
+
+  Promise.resolve()
+    .then(() => onMarkAsRead?.(notification))
+    .then((success) => {
+      if (success === false) {
+        processingIdsRef.current.delete(id);
+      }
+    })
+    .catch((error) => {
+      processingIdsRef.current.delete(id);
+      console.error("Unable to mark notification as read:", error);
+    });
+});
+
+
+  }, [open, loading, notifications, onMarkAsRead]);
 
   useEffect(() => {
     if (!open) return undefined;
