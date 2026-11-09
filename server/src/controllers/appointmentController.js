@@ -1,4 +1,7 @@
 const prisma = require("../prisma");
+const {
+    getDoctorShiftPeriods
+} = require("../services/doctorShiftAvailability");
 const { notifyAppointmentStakeholders } = require("../services/appointmentNotifications");
 
 
@@ -29,9 +32,204 @@ const utcDayRange = (date) => {
     return { start, end };
 };
 
+
+const getAppointmentInterval = (date, timeSlot, durationMinutes) => {
+    const startTime = parseShiftTime(timeSlot);
+
+    if (startTime === null) return null;
+
+    const dayStart = utcDayRange(date).start;
+    const start = dayStart.getTime() / 60000 + startTime;
+    const duration = durationMinutes ?? 60;
+
+    if (!Number.isInteger(duration) || duration <= 0) {
+        return null;
+    }
+
+    return {
+        start,
+        end: start + duration
+    };
+};
+
+const hasAppointmentOverlap = async (
+    tx,
+    {
+        doctorId,
+        date,
+        timeSlot,
+        durationMinutes,
+        excludeAppointmentId
+    }
+) => {
+    const requested = getAppointmentInterval(
+        date,
+        timeSlot,
+        durationMinutes ?? 60
+    );
+
+    if (!requested) {
+        const error = new Error("Invalid appointment time or duration.");
+        error.code = "INVALID_APPOINTMENT_TIME";
+        throw error;
+    }
+
+    const dayStart = utcDayRange(date).start;
+
+    const previousDay = new Date(dayStart);
+    previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+
+    const afterNextDay = new Date(dayStart);
+    afterNextDay.setUTCDate(afterNextDay.getUTCDate() + 2);
+
+    const existingAppointments = await tx.appointment.findMany({
+        where: {
+            doctorId,
+            date: {
+                gte: previousDay,
+                lt: afterNextDay
+            },
+            status: SLOT_HOLDING,
+            ...(excludeAppointmentId !== undefined
+                ? { id: { not: excludeAppointmentId } }
+                : {})
+        },
+        select: {
+            date: true,
+            timeSlot: true,
+            durationMinutes: true
+        }
+    });
+
+    return existingAppointments.some((appointment) => {
+        const existing = getAppointmentInterval(
+            appointment.date,
+            appointment.timeSlot,
+            appointment.durationMinutes ?? 60
+        );
+
+        // Fail safely if a legacy record has an invalid time.
+        if (!existing) return true;
+
+        return (
+            existing.start < requested.end &&
+            existing.end > requested.start
+        );
+    });
+};
+
+
+// ---------------------------------------------------------------------------
+// Doctor shift availability
+// ---------------------------------------------------------------------------
+
+const parseShiftTime = (value) => {
+    if (typeof value !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+        return null;
+    }
+
+    const [hours, minutes] = value.split(":").map(Number);
+    return hours * 60 + minutes;
+};
+
+const getIsoDayOfWeek = (date) => {
+    const day = date.getUTCDay();
+    return day === 0 ? 7 : day;
+};
+
+const getDateKey = (date) => date.toISOString().slice(0, 10);
+
+
+const ensureDoctorShiftAvailability = async (
+    tx,
+    doctorId,
+    appointmentDate,
+    timeSlot,
+    durationMinutes = 60
+) => {
+    const appointmentTime = parseShiftTime(timeSlot);
+
+    if (appointmentTime === null) {
+        const error = new Error("Appointment time must use HH:mm format.");
+        error.code = "INVALID_APPOINTMENT_TIME";
+        throw error;
+    }
+
+    if (
+        !Number.isInteger(durationMinutes) ||
+        durationMinutes <= 0
+    ) {
+        const error = new Error(
+            "Appointment duration must be a positive number of minutes."
+        );
+        error.code = "INVALID_APPOINTMENT_DURATION";
+        throw error;
+    }
+
+    // Retrieve the effective recurring shifts and exceptions.
+    const {
+        dayStart,
+        previousDay,
+        currentPeriods,
+        previousPeriods
+    } = await getDoctorShiftPeriods(
+        tx,
+        doctorId,
+        appointmentDate
+    );
+
+    // Convert the requested appointment into absolute UTC minutes.
+    const appointmentStart =
+        dayStart.getTime() / 60000 + appointmentTime;
+
+    const appointmentEnd = appointmentStart + durationMinutes;
+
+    // A consultation must fit completely inside one continuous
+    // availability period.
+    const fitsInsidePeriod = (period, periodDate) => {
+        const start = parseShiftTime(period.startTime);
+        const end = parseShiftTime(period.endTime);
+
+        if (start === null || end === null || start === end) {
+            return false;
+        }
+
+        const periodStart =
+            periodDate.getTime() / 60000 + start;
+
+        const periodEnd =
+            periodDate.getTime() / 60000 +
+            (end < start ? end + 1440 : end);
+
+        return (
+            appointmentStart >= periodStart &&
+            appointmentEnd <= periodEnd
+        );
+    };
+
+    const availableToday = currentPeriods.some((period) =>
+        fitsInsidePeriod(period, dayStart)
+    );
+
+    const availableFromPreviousDay = previousPeriods.some((period) =>
+        fitsInsidePeriod(period, previousDay)
+    );
+
+    if (!availableToday && !availableFromPreviousDay) {
+        const error = new Error(
+            "The doctor is not available for the full consultation duration during the selected date and time."
+        );
+
+        error.code = "DOCTOR_SHIFT_UNAVAILABLE";
+        throw error;
+    }
+};
 // GET /api/appointments/booked-slots?doctorId=1&date=2026-11-02
 // Returns ONLY the time slots already taken for that doctor on that day
 // (e.g. ["09:00", "10:00"]). No patient details are ever returned.
+
+// GET /api/appointments/booked-slots?doctorId=1&date=2026-11-02
+// Returns booked slots and the doctor's effective shift availability.
 const getBookedSlots = async (req, res) => {
     try {
         const doctorId = Number(req.query.doctorId);
@@ -53,6 +251,7 @@ const getBookedSlots = async (req, res) => {
 
         const { start, end } = utcDayRange(day);
 
+        // Retrieve booked appointment slots.
         const rows = await prisma.appointment.findMany({
             where: {
                 doctorId,
@@ -62,12 +261,85 @@ const getBookedSlots = async (req, res) => {
             select: { timeSlot: true }
         });
 
+        const bookedSlots = [
+            ...new Set(rows.map((row) => row.timeSlot))
+        ];
+
+        // Retrieve effective recurring shifts and exceptions.
+        const {
+            currentPeriods,
+            previousPeriods,
+            currentException
+        } = await getDoctorShiftPeriods(prisma, doctorId, day);
+
+        // Validate period times before exposing them as availability.
+        const isValidPeriod = (period) => {
+            const validTime = (value) =>
+                typeof value === "string" &&
+                /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+
+            return (
+                validTime(period.startTime) &&
+                validTime(period.endTime) &&
+                period.startTime !== period.endTime
+            );
+        };
+
+        // Current-day periods always intersect their own calendar day.
+        const hasCurrentDayAvailability =
+            currentPeriods.some(isValidPeriod);
+
+        // A previous-day period only extends into this day when overnight.
+        const hasPreviousDayOvernightAvailability =
+            previousPeriods.some((period) =>
+                isValidPeriod(period) &&
+                period.endTime < period.startTime
+            );
+
+        const isAvailable =
+            hasCurrentDayAvailability ||
+            hasPreviousDayOvernightAvailability;
+
+        let unavailableReason = null;
+
+        if (!isAvailable) {
+            unavailableReason =
+                currentException?.mode === "REPLACE"
+                    ? "DOCTOR_SHIFT_EXCEPTION"
+                    : "NO_WORKING_HOURS";
+        }
+
         return res.json({
             success: true,
-            data: [...new Set(rows.map((row) => row.timeSlot))]
+            data: bookedSlots,
+            availability: {
+                isAvailable,
+                reason: unavailableReason,
+                exception: currentException
+                    ? {
+                        mode: currentException.mode,
+                        reason: currentException.reason
+                    }
+                    : null,
+                periods: {
+                    currentDay: currentPeriods.filter(isValidPeriod),
+                    previousDay: previousPeriods.filter(
+                        (period) =>
+                            isValidPeriod(period) &&
+                            period.endTime < period.startTime
+                    )
+                }
+            }
         });
     } catch (error) {
         console.error("Get booked slots error:", error);
+
+        if (error.code === "DOCTOR_NOT_FOUND") {
+            return res.status(404).json({
+                success: false,
+                message: "Doctor profile not found"
+            });
+        }
 
         return res.status(500).json({
             success: false,
@@ -81,27 +353,33 @@ const getBookedSlots = async (req, res) => {
 // for the same slot at the same moment can no longer both succeed: one gets
 // SLOT_TAKEN (or a write conflict, P2034, which is retried and then reports
 // SLOT_TAKEN once it can see the other booking).
+
 const createAppointmentIfSlotFree = async (data, include) => {
     for (let attempt = 1; ; attempt += 1) {
         try {
             return await prisma.$transaction(
                 async (tx) => {
-                    const { start, end } = utcDayRange(data.date);
+                    await ensureDoctorShiftAvailability(
+                        tx,
+                        data.doctorId,
+                        data.date,
+                        data.timeSlot,
+                        data.durationMinutes ?? 60
+                    );
 
-                    const clash = await tx.appointment.findFirst({
-                        where: {
-                            doctorId: data.doctorId,
-                            date: { gte: start, lt: end },
-                            timeSlot: data.timeSlot,
-                            status: SLOT_HOLDING
-                        },
-                        select: { id: true }
+                    const clash = await hasAppointmentOverlap(tx, {
+                        doctorId: data.doctorId,
+                        date: data.date,
+                        timeSlot: data.timeSlot,
+                        durationMinutes: data.durationMinutes ?? 60
                     });
 
                     if (clash) {
-                        const taken = new Error("That time slot is no longer available.");
-                        taken.code = "SLOT_TAKEN";
-                        throw taken;
+                        const error = new Error(
+                            "That appointment overlaps with an existing booking."
+                        );
+                        error.code = "SLOT_TAKEN";
+                        throw error;
                     }
 
                     return tx.appointment.create({ data, include });
@@ -119,6 +397,7 @@ const createAppointmentIfSlotFree = async (data, include) => {
 
 // Updates an appointment only if its new slot is available
 // and the appointment has not changed since it was first read.
+
 const updateAppointmentIfSlotFree = async (
     id,
     data,
@@ -135,7 +414,9 @@ const updateAppointmentIfSlotFree = async (
                             select: {
                                 id: true,
                                 status: true,
-                                updatedAt: true
+                                updatedAt: true,
+                                durationMinutes: true,
+                                doctorId: true
                             }
                         });
 
@@ -168,23 +449,35 @@ const updateAppointmentIfSlotFree = async (
                         throw error;
                     }
 
-                    if (data.status !== "CANCELLED") {
-                        const { start, end } = utcDayRange(data.date);
+                    const effectiveDurationMinutes =
+                        data.durationMinutes ??
+                        currentAppointment.durationMinutes ??
+                        60;
 
-                        const clash = await tx.appointment.findFirst({
-                            where: {
-                                id: { not: id },
-                                doctorId: data.doctorId,
-                                date: { gte: start, lt: end },
-                                timeSlot: data.timeSlot,
-                                status: SLOT_HOLDING
-                            },
-                            select: { id: true }
+                        const effectiveDoctorId =
+                                data.doctorId ?? currentAppointment.doctorId;
+
+
+                    if (data.status !== "CANCELLED") {
+                        await ensureDoctorShiftAvailability(
+                            tx,
+                            effectiveDoctorId,
+                            data.date,
+                            data.timeSlot,
+                            effectiveDurationMinutes
+                        );
+
+                        const clash = await hasAppointmentOverlap(tx, {
+                            doctorId: effectiveDoctorId,
+                            date: data.date,
+                            timeSlot: data.timeSlot,
+                            durationMinutes: effectiveDurationMinutes,
+                            excludeAppointmentId: id
                         });
 
                         if (clash) {
                             const error = new Error(
-                                "This doctor already has an appointment for the selected date and time."
+                                "This doctor already has an overlapping appointment."
                             );
                             error.code = "SLOT_TAKEN";
                             throw error;
@@ -449,9 +742,10 @@ if (role === "PATIENT") {
 // may still pass patientId explicitly in the body.
 const createAppointment = async (req, res) => {
     try {
-        const {
+const {
     doctorId,
     departmentId,
+    consultationTypeId,
     date,
     timeSlot,
     reason
@@ -488,6 +782,17 @@ const createAppointment = async (req, res) => {
 
         const parsedDoctorId = Number(doctorId);
         const parsedDepartmentId = Number(departmentId);
+        const parsedConsultationTypeId = Number(consultationTypeId);
+
+if (
+    !Number.isInteger(parsedConsultationTypeId) ||
+    parsedConsultationTypeId <= 0
+) {
+    return res.status(400).json({
+        success: false,
+        message: "A valid consultationTypeId is required"
+    });
+}
 
         if (
             Number.isNaN(parsedPatientId) ||
@@ -555,6 +860,24 @@ const createAppointment = async (req, res) => {
             });
         }
 
+        const consultationType = await prisma.consultationType.findFirst({
+    where: {
+        id: parsedConsultationTypeId,
+        departmentId: parsedDepartmentId,
+        isActive: true
+    }
+});
+
+if (!consultationType) {
+    return res.status(400).json({
+        success: false,
+        message:
+            "The selected consultation type is invalid, inactive, or does not belong to this department."
+    });
+}
+
+const durationMinutes = consultationType.durationMinutes;
+
         const doctorDepartment =
             await prisma.doctorDepartment.findUnique({
                 where: {
@@ -571,13 +894,7 @@ const createAppointment = async (req, res) => {
                 message: "Doctor is not assigned to this department"
             });
         }
-
-
-        
-
-
-        // Prevent a doctor from receiving overlapping active appointments.
-        // Prevent double-booking for the same doctor, date and time slot.
+ // Prevent double-booking for the same doctor, date and time slot.
 const dayStart = new Date(
     Date.UTC(
         appointmentDate.getUTCFullYear(),
@@ -616,18 +933,21 @@ if (conflictingAppointment) {
         // created in one transaction (see createAppointmentIfSlotFree).
         const appointment = await createAppointmentIfSlotFree(
             {
-                patientId: parsedPatientId,
-                doctorId: parsedDoctorId,
-                departmentId: parsedDepartmentId,
-                date: appointmentDate,
-                timeSlot,
-                reason,
-                status: "PENDING"
-            },
+    patientId: parsedPatientId,
+    doctorId: parsedDoctorId,
+    departmentId: parsedDepartmentId,
+    consultationTypeId: parsedConsultationTypeId,
+    durationMinutes,
+    date: appointmentDate,
+    timeSlot,
+    reason,
+    status: "PENDING"
+},
             {
                 patient: true,
                 doctor: true,
-                department: true
+                department: true,
+                consultationType: true
             }
         );
 
@@ -650,6 +970,26 @@ if (conflictingAppointment) {
         });
     } catch (error) {
         // Someone else took the slot between the check and the booking.
+        if (error.code === "DOCTOR_SHIFT_UNAVAILABLE") {
+    return res.status(409).json({
+        success: false,
+        message: error.message
+    });
+}
+
+if (error.code === "INVALID_APPOINTMENT_TIME") {
+    return res.status(400).json({
+        success: false,
+        message: error.message
+    });
+}
+
+if (error.code === "DOCTOR_NOT_FOUND") {
+    return res.status(404).json({
+        success: false,
+        message: error.message
+    });
+}
         if (error.code === "SLOT_TAKEN" || error.code === "P2034") {
             return res.status(409).json({
                 success: false,
@@ -671,6 +1011,12 @@ if (conflictingAppointment) {
 // PUT /api/appointments/:id
 const updateAppointment = async (req, res) => {
     try {
+
+        console.log("UPDATE APPOINTMENT AUTH:", {
+    role: req.user?.role,
+    userId: req.user?.userId,
+    user: req.user
+});
         const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
             return res.status(400).json({
@@ -690,6 +1036,131 @@ const updateAppointment = async (req, res) => {
             });
         }
 
+        // Patient self-service rescheduling.
+// Patients may only change the date, time slot and reason of their own
+// PENDING or CONFIRMED appointments.
+if (req.user?.role === "PATIENT") {
+    const userId = Number(req.user.userId);
+
+    const patient = await prisma.patient.findUnique({
+        where: { userId },
+        select: { id: true }
+    });
+
+    if (!patient || patient.id !== existingAppointment.patientId) {
+        return res.status(403).json({
+            success: false,
+            message: "You are not authorised to update this appointment."
+        });
+    }
+
+    if (!["PENDING", "CONFIRMED"].includes(existingAppointment.status)) {
+        return res.status(400).json({
+            success: false,
+            message: "Only pending or confirmed appointments can be rescheduled."
+        });
+    }
+
+    // Patients cannot modify ownership, doctor, department or status.
+    const restrictedFields = [
+        "patientId",
+        "doctorId",
+        "departmentId",
+        "status"
+    ];
+
+    const attemptedRestrictedField = restrictedFields.find(
+        (field) => Object.prototype.hasOwnProperty.call(req.body, field)
+    );
+
+    if (attemptedRestrictedField) {
+        return res.status(400).json({
+            success: false,
+            message: `Patients are not allowed to change ${attemptedRestrictedField}.`
+        });
+    }
+
+    const appointmentDate = req.body.date !== undefined
+        ? new Date(req.body.date)
+        : existingAppointment.date;
+
+    if (Number.isNaN(appointmentDate.getTime())) {
+        return res.status(400).json({
+            success: false,
+            message: "Invalid appointment date."
+        });
+    }
+
+    const effectiveTimeSlot = req.body.timeSlot !== undefined
+        ? req.body.timeSlot
+        : existingAppointment.timeSlot;
+
+    if (
+        typeof effectiveTimeSlot !== "string" ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(effectiveTimeSlot)
+    ) {
+        return res.status(400).json({
+            success: false,
+            message: "Time slot must use the HH:mm format."
+        });
+    }
+
+    if (
+        req.body.reason !== undefined &&
+        (typeof req.body.reason !== "string" || !req.body.reason.trim())
+    ) {
+        return res.status(400).json({
+            success: false,
+            message: "Appointment reason must be a non-empty string."
+        });
+    }
+
+    const updateData = {
+        date: appointmentDate,
+        timeSlot: effectiveTimeSlot,
+        reason: req.body.reason !== undefined
+            ? req.body.reason.trim()
+            : existingAppointment.reason
+    };
+
+    const appointment = await updateAppointmentIfSlotFree(
+        id,
+        updateData,
+        {
+            patient: true,
+            doctor: true,
+            department: true
+        },
+        existingAppointment.updatedAt
+    );
+
+    const scheduleChanged =
+    existingAppointment.date.getTime() !== appointment.date.getTime() ||
+    existingAppointment.timeSlot !== appointment.timeSlot ||
+    existingAppointment.doctorId !== appointment.doctorId ||
+    existingAppointment.departmentId !== appointment.departmentId ||
+    existingAppointment.consultationTypeId !== appointment.consultationTypeId ||
+    existingAppointment.durationMinutes !== appointment.durationMinutes;
+
+    if (scheduleChanged) {
+        await notifyAppointmentStakeholders({
+            appointment,
+            type: "APPOINTMENT_RESCHEDULED",
+            title: "Appointment rescheduled",
+            message: `The appointment schedule has changed to ${appointment.date.toISOString().slice(0, 10)} at ${appointment.timeSlot}.`,
+            eventKey: `appointment-rescheduled:${appointment.id}:${appointment.updatedAt.toISOString()}`
+        });
+    }
+
+    return res.json({
+        success: true,
+        message: scheduleChanged
+            ? "Appointment rescheduled successfully."
+            : "Appointment details updated successfully.",
+        data: appointment
+    });
+}
+
         const {
     patientId,
     doctorId,
@@ -697,7 +1168,8 @@ const updateAppointment = async (req, res) => {
     date,
     timeSlot,
     reason,
-    status
+    status,
+    consultationTypeId
 } = req.body;
 
 // Only allow status transitions that belong to the general
@@ -807,6 +1279,52 @@ if (status !== undefined && status !== existingAppointment.status) {
         ? timeSlot
         : existingAppointment.timeSlot;
 
+        // Validate the consultation type when updating an appointment.
+// If staff did not provide a new type, retain the existing one.
+// Only validate consultation type when one is supplied,
+// or when the existing appointment already has one.
+let consultationTypeData = {};
+
+if (
+    consultationTypeId !== undefined ||
+    existingAppointment.consultationTypeId !== null
+) {
+    const effectiveConsultationTypeId =
+        consultationTypeId !== undefined
+            ? Number(consultationTypeId)
+            : existingAppointment.consultationTypeId;
+
+    if (
+        !Number.isInteger(effectiveConsultationTypeId) ||
+        effectiveConsultationTypeId <= 0
+    ) {
+        return res.status(400).json({
+            success: false,
+            message: "A valid consultationTypeId is required"
+        });
+    }
+
+    const consultationType = await prisma.consultationType.findFirst({
+        where: {
+            id: effectiveConsultationTypeId,
+            departmentId: parsedDepartmentId,
+            isActive: true
+        }
+    });
+
+    if (!consultationType) {
+        return res.status(400).json({
+            success: false,
+            message:
+                "The selected consultation type is invalid, inactive, or does not belong to this department."
+        });
+    }
+
+    consultationTypeData = {
+        consultationTypeId: effectiveConsultationTypeId,
+        durationMinutes: consultationType.durationMinutes
+    };
+}
 
 
 
@@ -814,6 +1332,7 @@ if (status !== undefined && status !== existingAppointment.status) {
     patientId: parsedPatientId,
     doctorId: parsedDoctorId,
     departmentId: parsedDepartmentId,
+    ...consultationTypeData,
     date: appointmentDate,
     timeSlot: effectiveTimeSlot,
     reason:
@@ -842,7 +1361,8 @@ const appointment = await updateAppointmentIfSlotFree(
     {
         patient: true,
         doctor: true,
-        department: true
+        department: true,
+        consultationType: true
     },
     existingAppointment.updatedAt
 );
@@ -896,6 +1416,26 @@ if (notificationEvent) {
         });
     } catch (error) {
         console.error("Update appointment error:", error);
+        if (error.code === "DOCTOR_SHIFT_UNAVAILABLE") {
+    return res.status(409).json({
+        success: false,
+        message: error.message
+    });
+}
+
+if (error.code === "INVALID_APPOINTMENT_TIME") {
+    return res.status(400).json({
+        success: false,
+        message: error.message
+    });
+}
+
+if (error.code === "DOCTOR_NOT_FOUND") {
+    return res.status(404).json({
+        success: false,
+        message: error.message
+    });
+}
         if (error.code === "SLOT_TAKEN" || error.code === "P2034") {
     return res.status(409).json({
         success: false,
@@ -955,6 +1495,23 @@ const deleteAppointment = async (req, res) => {
                 message: "Appointment not found"
             });
         }
+
+        // Patients may only cancel their own appointments.
+if (req.user?.role === "PATIENT") {
+    const userId = Number(req.user.userId);
+
+    const patient = await prisma.patient.findUnique({
+        where: { userId },
+        select: { id: true }
+    });
+
+    if (!patient || patient.id !== existingAppointment.patientId) {
+        return res.status(403).json({
+            success: false,
+            message: "You are not authorised to cancel this appointment."
+        });
+    }
+}
 
         if (existingAppointment.status === "CANCELLED") {
     return res.json({

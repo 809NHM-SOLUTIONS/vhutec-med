@@ -52,14 +52,14 @@ router.post(
 router.put(
     "/:id",
     authenticate,
-    roleGuard("ADMIN", "RECEPTIONIST"),
+    roleGuard("PATIENT", "ADMIN", "RECEPTIONIST"),
     updateAppointment
 );
 
 router.delete(
     "/:id",
     authenticate,
-    roleGuard("ADMIN", "RECEPTIONIST"),
+    roleGuard("PATIENT", "ADMIN", "RECEPTIONIST"),
     deleteAppointment
 );
 

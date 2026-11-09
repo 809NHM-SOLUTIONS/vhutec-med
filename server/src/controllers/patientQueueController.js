@@ -121,11 +121,10 @@ const getMyQueue = async (req, res) => {
 
         const { appointment, state } = ranked[0];
 
-        // Position among today's waiting patients, using the same filter and
-        // order as Call Next. Only ids are read, so no other patient's details
-        // can leak. (Call Next doesn't skip a cancelled appointment that is
-        // still WAITING, so neither does this count; otherwise the position
-        // would be wrong by one whenever reception calls that entry.)
+        // Position among today's waiting patients.
+        // Match Call Next exactly: only count WAITING queue entries
+        // whose appointments are still CHECKED_IN.
+        // Only ids are selected, so other patients' details remain private.
         let position = null;
         let ahead = null;
         let waitingTotal = null;
@@ -135,12 +134,14 @@ const getMyQueue = async (req, res) => {
                 where: {
                     status: "WAITING",
                     appointment: {
-                        date: { gte: dayStart, lt: nextDayStart }
+                        date: { gte: dayStart, lt: nextDayStart },
+                        status: "CHECKED_IN"
                     }
                 },
                 select: { id: true },
                 orderBy: WAITING_ORDER
             });
+
 
             const index = waiting.findIndex((entry) => entry.id === appointment.queue.id);
 

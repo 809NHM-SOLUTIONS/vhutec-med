@@ -21,7 +21,10 @@ const doctorDepartmentRoutes = require("./routes/doctorDepartmentRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
 const queueRoutes = require("./routes/queueRoutes");
 const consultationRoutes = require("./routes/consultationRoutes");
+const consultationTypeRoutes = require("./routes/consultationTypeRoutes");
 const receptionistRoutes = require("./routes/receptionistRoutes");
+const staffShiftRoutes = require("./routes/staffShiftRoutes");
+const staffShiftExceptionRoutes = require("./routes/staffShiftExceptionRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
 
 const { createServer } = require("http");
@@ -50,7 +53,10 @@ app.use("/api/doctor-departments", doctorDepartmentRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/queue", queueRoutes);
 app.use("/api/consultations", consultationRoutes);
+app.use("/api/consultation-types", consultationTypeRoutes);
 app.use("/api/receptionists", receptionistRoutes);
+app.use("/api/staff-shifts", staffShiftRoutes);
+app.use("/api/staff-shift-exceptions", staffShiftExceptionRoutes);
 
 app.use("/api/admin/dashboard", adminDashboardRoutes);
 app.use("/api/receptionist", require("./routes/receptionDashboardRoutes"));

@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-
 }
 
 enum UserRole {
@@ -48,28 +47,30 @@ enum NotificationType {
 }
 
 model User {
-  id                        Int       @id @default(autoincrement())
-  email                     String    @unique
-  passwordHash              String    @map("password_hash")
+  id           Int    @id @default(autoincrement())
+  email        String @unique
+  passwordHash String @map("password_hash")
 
   // Password reset
-  resetPasswordToken        String?   @map("reset_password_token")
-  resetPasswordExpiresAt    DateTime? @map("reset_password_expires_at")
+  resetPasswordToken     String?   @map("reset_password_token")
+  resetPasswordExpiresAt DateTime? @map("reset_password_expires_at")
 
   // Patient email verification
-  emailVerified             Boolean   @default(false) @map("email_verified")
-  emailVerificationToken    String?   @unique @map("email_verification_token")
+  emailVerified              Boolean   @default(false) @map("email_verified")
+  emailVerificationToken     String?   @unique @map("email_verification_token")
   emailVerificationExpiresAt DateTime? @map("email_verification_expires_at")
 
-  role                      UserRole
-  createdAt                 DateTime  @default(now()) @map("created_at")
-  updatedAt                 DateTime  @updatedAt @map("updated_at")
+  role      UserRole
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  patient                   Patient?
-  doctor                    Doctor?
-  receptionist              Receptionist?
+  patient      Patient?
+  doctor       Doctor?
+  receptionist Receptionist?
 
-  notifications Notification[]
+  notifications   Notification[]
+  staffShifts     StaffShift[]
+  shiftExceptions StaffShiftException[]
 
   @@map("users")
 }
@@ -133,8 +134,9 @@ model Department {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  doctors      DoctorDepartment[]
-  appointments Appointment[]
+  doctors           DoctorDepartment[]
+  appointments      Appointment[]
+  consultationTypes ConsultationType[]
 
   @@map("departments")
 }
@@ -162,11 +164,15 @@ model Appointment {
   createdAt    DateTime          @default(now()) @map("created_at")
   updatedAt    DateTime          @updatedAt @map("updated_at")
 
-  patient      Patient       @relation(fields: [patientId], references: [id])
-  doctor       Doctor        @relation(fields: [doctorId], references: [id])
-  department   Department    @relation(fields: [departmentId], references: [id])
-  queue        Queue?
-  consultation Consultation?
+  consultationTypeId Int? @map("consultation_type_id")
+  durationMinutes    Int? @map("duration_minutes")
+
+  patient          Patient           @relation(fields: [patientId], references: [id])
+  doctor           Doctor            @relation(fields: [doctorId], references: [id])
+  department       Department        @relation(fields: [departmentId], references: [id])
+  queue            Queue?
+  consultation     Consultation?
+  consultationType ConsultationType? @relation(fields: [consultationTypeId], references: [id], onDelete: Restrict)
 
   notifications Notification[]
 
@@ -222,4 +228,70 @@ model Notification {
   @@index([userId, readAt, createdAt])
   @@index([appointmentId])
   @@map("notifications")
+}
+
+model StaffShift {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  dayOfWeek Int      @map("day_of_week")
+  startTime String   @map("start_time")
+  endTime   String   @map("end_time")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek, isActive])
+  @@map("staff_shifts")
+}
+
+enum StaffShiftExceptionMode {
+  REPLACE
+  ADD
+}
+
+model StaffShiftException {
+  id        Int                     @id @default(autoincrement())
+  userId    Int                     @map("user_id")
+  date      DateTime                @db.Date
+  mode      StaffShiftExceptionMode
+  reason    String?
+  createdAt DateTime                @default(now()) @map("created_at")
+  updatedAt DateTime                @updatedAt @map("updated_at")
+
+  user    User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periods StaffShiftExceptionPeriod[]
+
+  @@unique([userId, date])
+  @@map("staff_shift_exceptions")
+}
+
+model StaffShiftExceptionPeriod {
+  id          Int    @id @default(autoincrement())
+  exceptionId Int    @map("exception_id")
+  startTime   String @map("start_time")
+  endTime     String @map("end_time")
+
+  exception StaffShiftException @relation(fields: [exceptionId], references: [id], onDelete: Cascade)
+
+  @@map("staff_shift_exception_periods")
+}
+
+model ConsultationType {
+  id              Int      @id @default(autoincrement())
+  departmentId    Int      @map("department_id")
+  name            String
+  description     String
+  durationMinutes Int      @map("duration_minutes")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  department   Department    @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  appointments Appointment[]
+
+  @@unique([departmentId, name])
+  @@index([departmentId, isActive])
+  @@map("consultation_types")
 }

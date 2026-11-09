@@ -134,6 +134,7 @@ const getQueueById = async (req, res) => {
 
 
 // POST /api/queue
+
 const createQueue = async (req, res) => {
     try {
         const {
@@ -146,11 +147,11 @@ const createQueue = async (req, res) => {
         const parsedQueueNumber = Number(queueNumber);
 
         if (!Number.isInteger(parsedAppointmentId) || parsedAppointmentId <= 0) {
-    return res.status(400).json({
-        success: false,
-        message: "appointmentId must be a positive integer"
-    });
-}
+            return res.status(400).json({
+                success: false,
+                message: "appointmentId must be a positive integer"
+            });
+        }
 
         if (!Number.isInteger(parsedQueueNumber) || parsedQueueNumber <= 0) {
             return res.status(400).json({
@@ -159,70 +160,146 @@ const createQueue = async (req, res) => {
             });
         }
 
-        if (!VALID_QUEUE_STATUSES.includes(status)) {
+        // A new queue record must always begin in WAITING.
+        if (status !== "WAITING") {
             return res.status(400).json({
                 success: false,
-                message: "Invalid queue status"
-            });
-        }
-        
-
-        const appointment = await prisma.appointment.findUnique({
-            where: {
-                id: parsedAppointmentId
-            }
-        });
-
-        if (!appointment) {
-            return res.status(404).json({
-                success: false,
-                message: "Appointment not found"
+                message: "New queue records must start with WAITING status"
             });
         }
 
-        const existingQueue = await prisma.queue.findUnique({
-            where: {
-                appointmentId: parsedAppointmentId
-            }
-        });
+        // Check-in and appointment status update happen atomically.
+        const queue = await prisma.$transaction(
+            async (tx) => {
 
-        if (existingQueue) {
-            return res.status(409).json({
-                success: false,
-                message: "A queue record already exists for this appointment"
-            });
-        }
-
-        const queue = await prisma.queue.create({
-            data: {
-                appointmentId: parsedAppointmentId,
-                queueNumber: parsedQueueNumber,
-                status
-            },
-            include: {
-                appointment: {
-                    include: {
-                        patient: true,
-                        doctor: true,
-                        department: true
+                const appointment = await tx.appointment.findUnique({
+                    where: {
+                        id: parsedAppointmentId
                     }
+                });
+
+                if (!appointment) {
+                    const error = new Error("Appointment not found");
+                    error.code = "APPOINTMENT_NOT_FOUND";
+                    throw error;
                 }
+
+                // Only pending or confirmed appointments can be checked in.
+                // Check for an existing queue record first.
+const existingQueue = await tx.queue.findUnique({
+    where: {
+        appointmentId: parsedAppointmentId
+    }
+});
+
+if (existingQueue) {
+    const error = new Error(
+        "A queue record already exists for this appointment"
+    );
+    error.code = "QUEUE_ALREADY_EXISTS";
+    throw error;
+}
+
+// Only pending or confirmed appointments can be checked in.
+if (!["PENDING", "CONFIRMED"].includes(appointment.status)) {
+    const error = new Error(
+        "Only pending or confirmed appointments can be checked in"
+    );
+    error.code = "INVALID_APPOINTMENT_STATUS";
+    throw error;
+}
+
+                // Protect against concurrent appointment status changes.
+                const appointmentUpdate = await tx.appointment.updateMany({
+                    where: {
+                        id: parsedAppointmentId,
+                        status: {
+                            in: ["PENDING", "CONFIRMED"]
+                        }
+                    },
+                    data: {
+                        status: "CHECKED_IN"
+                    }
+                });
+
+                if (appointmentUpdate.count !== 1) {
+                    const error = new Error(
+                        "Appointment status changed. Please refresh and try again."
+                    );
+                    error.code = "APPOINTMENT_STATUS_CHANGED";
+                    throw error;
+                }
+
+                // Create the queue record and automatically record check-in time.
+                const newQueue = await tx.queue.create({
+                    data: {
+                        appointmentId: parsedAppointmentId,
+                        queueNumber: parsedQueueNumber,
+                        status: "WAITING",
+                        checkedInAt: new Date()
+                    },
+                    include: {
+                        appointment: {
+                            include: {
+                                patient: true,
+                                doctor: true,
+                                department: true
+                            }
+                        }
+                    }
+                });
+
+                return newQueue;
+            },
+            {
+                isolationLevel: "Serializable"
             }
+        );
+
+        // Notify stakeholders only after the transaction succeeds.
+        await notifyQueueEvent({
+            queue,
+            type: "PATIENT_CHECKED_IN",
+            eventKey: `patient-checked-in:${queue.id}`
         });
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
+            message: "Patient checked in successfully",
             data: queue
         });
+
     } catch (error) {
         console.error("Create queue error:", error);
 
-        res.status(500).json({
+        if (error.code === "APPOINTMENT_NOT_FOUND") {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+
+        if (
+            error.code === "INVALID_APPOINTMENT_STATUS" ||
+            error.code === "QUEUE_ALREADY_EXISTS" ||
+            error.code === "APPOINTMENT_STATUS_CHANGED" ||
+            error.code === "P2002" ||
+            error.code === "P2034"
+        ) {
+            return res.status(409).json({
+                success: false,
+                message: error.message ||
+                    "This appointment could not be checked in. Please refresh and try again."
+            });
+        }
+
+        return res.status(500).json({
             success: false,
             message: "Failed to create queue record"
         });
     }
 };
+
 
 // PUT /api/queue/:id
 const updateQueue = async (req, res) => {
