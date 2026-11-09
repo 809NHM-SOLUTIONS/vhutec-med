@@ -102,6 +102,12 @@ export const checkInAppointment = (id) =>
 export const callNextPatient = () =>
   api.post("/receptionist/queue/call-next").then((res) => res.data);
 
+export const callSpecificPatient = (queueId) =>
+  api.post(`/receptionist/queue/${queueId}/call`).then((res) => res.data);
+
+export const updateQueueStatus = (queueId, status) =>
+  api.patch(`/receptionist/queue/${queueId}/status`, { status }).then((res) => res.data);
+
 // ---- Doctor ----
 export const fetchDoctorDashboard = () =>
   api.get("/doctors/me/dashboard").then((res) => res.data);
