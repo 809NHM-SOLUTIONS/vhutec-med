@@ -16,6 +16,7 @@ const adminStaffRoutes = require("./routes/adminStaffRoutes");
 const userRoutes = require("./routes/userRoutes");
 const patientRoutes = require("./routes/patientRoutes");
 const doctorRoutes = require("./routes/doctorRoutes");
+const doctorAvailabilityRoutes = require("./routes/doctorAvailabilityRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const doctorDepartmentRoutes = require("./routes/doctorDepartmentRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
@@ -44,6 +45,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin/staff", adminStaffRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/patients", patientRoutes);
+// Doctor availability routes are mounted BEFORE the general doctor routes so
+// /api/doctors/me/availability is never swallowed by a /:id route.
+app.use("/api/doctors", doctorAvailabilityRoutes);
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/doctor-departments", doctorDepartmentRoutes);

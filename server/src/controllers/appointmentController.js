@@ -1,5 +1,6 @@
 const prisma = require("../prisma");
 const { notifyAppointmentStakeholders } = require("../services/appointmentNotifications");
+const { checkDoctorSlot } = require("../services/doctorAvailability");
 
 
 // ---------------------------------------------------------------------------
@@ -110,6 +111,14 @@ const createAppointmentIfSlotFree = async (data, include) => {
             );
         } catch (error) {
             if (error.code === "P2034" && attempt < 3) continue;
+
+            // The unique index on (doctor, day, time) rejected a duplicate.
+            if (error.code === "P2002") {
+                const taken = new Error("That time slot is no longer available.");
+                taken.code = "SLOT_TAKEN";
+                throw taken;
+            }
+
             throw error;
         }
     }
@@ -202,6 +211,12 @@ const updateAppointmentIfSlotFree = async (
         } catch (error) {
             if (error.code === "P2034" && attempt < 3) {
                 continue;
+            }
+
+            if (error.code === "P2002") {
+                const taken = new Error("That time slot is no longer available.");
+                taken.code = "SLOT_TAKEN";
+                throw taken;
             }
 
             throw error;
@@ -576,6 +591,23 @@ const createAppointment = async (req, res) => {
         
 
 
+        // The doctor must actually be available: a working day, not marked
+        // unavailable, and inside their working hours.
+        const availabilityCheck = await checkDoctorSlot(
+            prisma,
+            parsedDoctorId,
+            appointmentDate,
+            timeSlot
+        );
+
+        if (!availabilityCheck.ok) {
+            return res.status(409).json({
+                success: false,
+                code: availabilityCheck.code,
+                message: availabilityCheck.message
+            });
+        }
+
         // Prevent a doctor from receiving overlapping active appointments.
         // Prevent double-booking for the same doctor, date and time slot.
 const dayStart = new Date(
@@ -806,6 +838,31 @@ if (status !== undefined && status !== existingAppointment.status) {
     timeSlot !== undefined
         ? timeSlot
         : existingAppointment.timeSlot;
+
+        // Only re-check availability when the doctor, date or time is changing.
+        // Existing bookings that merely become outside the doctor's new hours
+        // are left alone until someone actually reschedules them.
+        const scheduleIsChanging =
+            existingAppointment.doctorId !== parsedDoctorId ||
+            existingAppointment.date.getTime() !== appointmentDate.getTime() ||
+            existingAppointment.timeSlot !== effectiveTimeSlot;
+
+        if (scheduleIsChanging && status !== "CANCELLED") {
+            const availabilityCheck = await checkDoctorSlot(
+                prisma,
+                parsedDoctorId,
+                appointmentDate,
+                effectiveTimeSlot
+            );
+
+            if (!availabilityCheck.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: availabilityCheck.code,
+                    message: availabilityCheck.message
+                });
+            }
+        }
 
 
 

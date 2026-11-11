@@ -134,3 +134,19 @@ export const createConsultation = (payload) =>
 
 export const updateConsultation = (id, payload) =>
   api.put(`/consultations/${id}`, payload).then((res) => res.data);
+// ---- Doctor availability ----
+export const fetchMyAvailability = () =>
+  api.get("/doctors/me/availability").then((res) => res.data);
+ 
+export const saveMyAvailability = (payload) =>
+  api.put("/doctors/me/availability", payload).then((res) => res.data);
+ 
+export const addUnavailableDate = (payload) =>
+  api.post("/doctors/me/unavailable-dates", payload).then((res) => res.data);
+ 
+export const removeUnavailableDate = (date) =>
+  api.delete(`/doctors/me/unavailable-dates/${date}`).then((res) => res.data);
+ 
+// Slots for one doctor on one date, as the patient booking page shows them.
+export const fetchDoctorAvailability = (doctorId, date) =>
+  api.get(`/doctors/${doctorId}/availability`, { params: { date } }).then((res) => res.data);
