@@ -29,7 +29,7 @@ import {
 } from "../../api/api";
 
 import PatientQueueStatus from "./patientQueueStatus";
-import TimeSlotPicker from "./Timeslotpicker";
+   import TimeSlotPicker from "./Timeslotpicker";
 
 import "./PatientDashboard.css";
 

@@ -1,5 +1,3 @@
-
-
 const express = require("express");
 
 const {
@@ -8,7 +6,9 @@ const {
     getQueue,
     getPatients,
     checkInAppointment,
-    callNextPatient
+    callNextPatient,
+    callSpecificPatient,
+    updateQueueStatus
 } = require("../controllers/receptionDashboardController");
 
 const authenticate = require("../middleware/auth");
@@ -28,5 +28,10 @@ router.get("/patients", getPatients);
 // only a logged-in RECEPTIONIST (or ADMIN) can check in or call patients.
 router.post("/appointments/:id/check-in", checkInAppointment);
 router.post("/queue/call-next", callNextPatient);
+
+// Manage Queue: call one specific patient, or move a patient to their next
+// status (CALLED -> IN_CONSULTATION -> COMPLETED). ":id" is the queue id.
+router.post("/queue/:id/call", callSpecificPatient);
+router.patch("/queue/:id/status", updateQueueStatus);
 
 module.exports = router;

@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
-import { fetchBookedSlots } from "../../api/api";
+import { useEffect, useRef, useState } from "react";
+import { fetchDoctorAvailability } from "../../api/api";
 import "./timeSlotPicker.css";
+
+// How often the list quietly re-checks the doctor's availability while open.
+const BACKGROUND_REFRESH_MS = 30000;
 
 function todayKey() {
   const now = new Date();
@@ -17,63 +20,112 @@ function isPast(date, slot) {
   return hours * 60 + minutes <= now.getHours() * 60 + now.getMinutes();
 }
 
+// Why a doctor has no slots on the chosen date.
+const DAY_OFF_MESSAGES = {
+  DOCTOR_UNAVAILABLE_DATE:
+    "This doctor is not available on this date. Please choose another date.",
+  NOT_A_WORKING_DAY:
+    "This doctor does not work on this day. Please choose another date.",
+};
+
 /**
- * Shows the time slots for one doctor on one date. Slots that are already
- * booked (or in the past) are shown greyed out and cannot be selected.
+ * Shows the time slots for one doctor on one date, exactly as the doctor has
+ * set them up (working days, hours, days off). Slots that are already booked
+ * (or in the past) are shown greyed out and cannot be selected.
+ *
+ * The list comes from the server (GET /doctors/:id/availability?date=...), so
+ * it follows the doctor's availability and re-checks itself every 30 seconds.
  *
  * Props:
- *  slots       all slots the clinic offers, e.g. ["08:00", "09:00"]
+ *  slots       no longer used (the doctor's own hours decide); kept so existing
+ *              pages that still pass it keep working
  *  doctorId    selected doctor id ("" until chosen)
  *  date        selected date, YYYY-MM-DD ("" until chosen)
  *  value       currently selected slot ("" for none)
  *  onChange    called with the chosen slot, or "" when the choice is cleared
  *  refreshKey  change this number to force the slots to be checked again
  */
-function TimeSlotPicker({ slots, doctorId, date, value, onChange, refreshKey = 0 }) {
-  const [booked, setBooked] = useState([]);
+function TimeSlotPicker({ doctorId, date, value, onChange, refreshKey = 0 }) {
+  const [day, setDay] = useState(null);
   const [status, setStatus] = useState("idle"); // idle | loading | ready | error
   const [errorMessage, setErrorMessage] = useState("");
   const [retryKey, setRetryKey] = useState(0);
+  const [removedNotice, setRemovedNotice] = useState(false);
+
+  // Always the latest selection, so background checks never use a stale one.
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  valueRef.current = value;
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    setRemovedNotice(false);
+  }, [doctorId, date]);
 
   useEffect(() => {
     if (!doctorId || !date) {
       setStatus("idle");
-      setBooked([]);
+      setDay(null);
       return undefined;
     }
 
     // Ignore answers that arrive after the doctor/date changed again.
     let current = true;
-    setStatus("loading");
-    setErrorMessage("");
 
-    fetchBookedSlots(doctorId, date)
-      .then((taken) => {
-        if (!current) return;
-        setBooked(taken);
-        setStatus("ready");
-        // The slot the patient had chosen may have been taken in the meantime.
-        if (value && taken.includes(value)) onChange("");
-      })
-      .catch((error) => {
-        if (!current) return;
-        console.error("Failed to load time slots:", error);
-        setBooked([]);
-        setStatus("error");
-        setErrorMessage(
-          error?.response?.data?.message ||
-            error?.message ||
-            "Unable to check available times."
-        );
-        if (value) onChange("");
-      });
+    const load = (background) => {
+      if (!background) {
+        setStatus("loading");
+        setErrorMessage("");
+      }
+
+      fetchDoctorAvailability(doctorId, date)
+        .then((result) => {
+          if (!current) return;
+
+          const loaded = result?.data?.day;
+          if (!loaded) throw new Error("Unable to check available times.");
+
+          setDay(loaded);
+          setStatus("ready");
+
+          // The slot the patient had chosen may have been taken, or the doctor
+          // may have changed their availability, in the meantime.
+          const chosen = valueRef.current;
+          if (chosen) {
+            const stillFree = (loaded.slots || []).some(
+              (slot) => slot.time === chosen && slot.status === "available"
+            );
+            if (!stillFree) {
+              onChangeRef.current("");
+              setRemovedNotice(true);
+            }
+          }
+        })
+        .catch((error) => {
+          if (!current) return;
+          // A failed background check keeps the list that is already shown.
+          if (background) return;
+
+          console.error("Failed to load time slots:", error);
+          setDay(null);
+          setStatus("error");
+          setErrorMessage(
+            error?.response?.data?.message ||
+              error?.message ||
+              "Unable to check available times."
+          );
+          if (valueRef.current) onChangeRef.current("");
+        });
+    };
+
+    load(false);
+
+    const timer = setInterval(() => load(true), BACKGROUND_REFRESH_MS);
 
     return () => {
       current = false;
+      clearInterval(timer);
     };
-    // `value` and `onChange` are intentionally left out: only a new doctor,
-    // date, retry or refresh should trigger a new availability check.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctorId, date, refreshKey, retryKey]);
 
   if (status === "idle") {
@@ -101,7 +153,18 @@ function TimeSlotPicker({ slots, doctorId, date, value, onChange, refreshKey = 0
     );
   }
 
-  const isUnavailable = (slot) => booked.includes(slot) || isPast(date, slot);
+  const slots = day?.slots || [];
+
+  if (DAY_OFF_MESSAGES[day?.reason]) {
+    return (
+      <p className="slot-message" role="status">
+        {DAY_OFF_MESSAGES[day.reason]}
+      </p>
+    );
+  }
+
+  const isBooked = (slot) => slot.status === "booked";
+  const isUnavailable = (slot) => isBooked(slot) || isPast(date, slot.time);
   const availableCount = slots.filter((slot) => !isUnavailable(slot)).length;
 
   if (availableCount === 0) {
@@ -115,13 +178,19 @@ function TimeSlotPicker({ slots, doctorId, date, value, onChange, refreshKey = 0
 
   return (
     <div>
+      {removedNotice && (
+        <p className="slot-message slot-message-error" role="alert">
+          The time you chose is no longer available. Please pick another time.
+        </p>
+      )}
+
       <div className="slot-grid" role="radiogroup" aria-label="Available appointment times">
         {slots.map((slot) => {
           const unavailable = isUnavailable(slot);
-          const selected = value === slot;
+          const selected = value === slot.time;
           return (
             <button
-              key={slot}
+              key={slot.time}
               type="button"
               role="radio"
               aria-checked={selected}
@@ -130,10 +199,13 @@ function TimeSlotPicker({ slots, doctorId, date, value, onChange, refreshKey = 0
               className={`slot-button${selected ? " selected" : ""}${
                 unavailable ? " unavailable" : ""
               }`}
-              onClick={() => onChange(slot)}
+              onClick={() => {
+                setRemovedNotice(false);
+                onChange(slot.time);
+              }}
             >
-              {slot}
-              {unavailable && <small>{booked.includes(slot) ? "Booked" : "Passed"}</small>}
+              {slot.time}
+              {unavailable && <small>{isBooked(slot) ? "Booked" : "Passed"}</small>}
             </button>
           );
         })}

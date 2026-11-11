@@ -37,7 +37,7 @@ import "./manageQueue.css";
 
 import { io } from "socket.io-client";
 
-import TimeSlotPicker from "../patient/Timeslotpicker";
+    import TimeSlotPicker from "../patient/Timeslotpicker";
 
 import NotificationBell from "../../components/notifications/NotificationBell";
 import useNotifications from "../../components/notifications/useNotifications";

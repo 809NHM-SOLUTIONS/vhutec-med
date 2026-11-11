@@ -28,9 +28,12 @@ import {
   FiUserCheck,
   FiUsers,
   FiBell,
+  FiSettings,
 } from "react-icons/fi";
 
 import "./DoctorDashboard.css";
+
+import DoctorAvailability from "./doctorAvailability";
 
 import useNotifications from "../../components/notifications/useNotifications";
 import NotificationBell from "../../components/notifications/NotificationBell";
@@ -369,6 +372,7 @@ const getPatientAge = (patient) => {
     { label: "Queue", icon: FiClock },
     { label: "Consultations", icon: FiUserCheck },
     { label: "Medical Records", icon: FiFileText },
+    { label: "Availability", icon: FiSettings },
     { label: "Notifications", icon: FiBell },
   ];
 
@@ -1869,6 +1873,7 @@ setConsultationNotes("");
     {activeSection === "Queue" && renderQueue()}
     {activeSection === "Consultations" && renderConsultations()}
     {activeSection === "Medical Records" && renderMedicalRecords()}
+    {activeSection === "Availability" && <DoctorAvailability />}
     {activeSection === "Notifications" && renderNotifications()}
   </>
 )}

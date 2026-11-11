@@ -110,6 +110,9 @@ model Doctor {
   appointments  Appointment[]
   consultations Consultation[]
 
+  availability     DoctorAvailability?
+  unavailableDates DoctorUnavailableDate[]
+
   @@map("doctors")
 }
 
@@ -294,4 +297,33 @@ model ConsultationType {
   @@unique([departmentId, name])
   @@index([departmentId, isActive])
   @@map("consultation_types")
+}
+
+model DoctorAvailability {
+  id          Int      @id @default(autoincrement())
+  doctorId    Int      @unique @map("doctor_id")
+  startTime   String   @default("08:00") @map("start_time")
+  endTime     String   @default("15:00") @map("end_time")
+  slotMinutes Int      @default(60) @map("slot_minutes")
+  workingDays Int[]    @default([1, 2, 3, 4, 5]) @map("working_days")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("doctor_availability")
+}
+
+model DoctorUnavailableDate {
+  id        Int      @id @default(autoincrement())
+  doctorId  Int      @map("doctor_id")
+  date      DateTime @db.Date
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, date])
+  @@index([doctorId, date])
+  @@map("doctor_unavailable_dates")
 }

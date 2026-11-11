@@ -1,0 +1,271 @@
+/* Doctor Availability page. Cards, headers and spacing come from
+   DoctorDashboard.css; this only adds what the page needs. */
+
+.da-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.da-state {
+  padding: 8px 0;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.da-state-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.da-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.da-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.da-field label,
+.da-days legend {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.da-field input,
+.da-field select {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.da-field input:focus-visible,
+.da-field select:focus-visible,
+.da-day:focus-visible,
+.da-button:focus-visible,
+.da-icon-button:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+.da-days {
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.da-day-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.da-day {
+  min-width: 52px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.da-day.active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+.da-preview {
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+
+.da-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.da-chips span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.da-error {
+  margin: 8px 0 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.da-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.da-button {
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 1px solid #0f766e;
+  border-radius: 10px;
+  background: #0f766e;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.da-button-secondary {
+  background: transparent;
+  color: inherit;
+  border-color: rgba(128, 128, 128, 0.5);
+}
+
+.da-button:disabled,
+.da-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.da-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.da-notice-success {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.da-notice-error {
+  background: rgba(185, 28, 28, 0.1);
+  color: #b91c1c;
+}
+
+.da-warning {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 14px;
+}
+
+.da-warning p {
+  margin: 4px 0 8px;
+}
+
+.da-warning ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.da-warning li span {
+  opacity: 0.85;
+}
+
+.da-dayoff-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.da-dayoff-form .da-button {
+  align-self: flex-start;
+}
+
+.da-empty {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.da-dayoff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.da-dayoff-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 10px;
+}
+
+.da-dayoff-list li div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.da-dayoff-list li span {
+  font-size: 13px;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}
+
+.da-icon-button {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 1000px) {
+  .da-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .da-actions {
+    flex-direction: column-reverse;
+  }
+
+  .da-actions .da-button {
+    width: 100%;
+  }
+}

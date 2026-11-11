@@ -1,5 +1,3 @@
-
-
 const prisma = require("../prisma");
 
 const { notifyQueueEvent } = require("../services/queueNotifications");
@@ -38,6 +36,8 @@ const toAppointment = (a) => ({
 
 const toQueueEntry = (a) => ({
     id: a.id,
+    queueId: a.queue.id,
+    appointmentStatus: a.status,
     queueNumber: a.queue.queueNumber,
     status: a.queue.status,
     checkedInAt: a.queue.checkedInAt,
@@ -145,6 +145,13 @@ queue: rows
     )
     .sort((x, y) => x.queue.queueNumber - y.queue.queueNumber)
     .map(toQueueEntry),
+
+        // Everything that went through the queue today, completed included
+        // (cancelled appointments excluded). Used by the Manage Queue page.
+        queueAll: rows
+            .filter((a) => a.queue && a.status !== "CANCELLED")
+            .sort((x, y) => x.queue.queueNumber - y.queue.queueNumber)
+            .map(toQueueEntry),
 
         activity: buildActivity(rows),
     };
@@ -454,6 +461,168 @@ where: {
     }
 };
 
+// Sends the same notifications the generic queue update sends. A failed
+// notification must never undo or hide a queue change that already saved.
+const notifyQueueChange = async (queueId, previousStatus) => {
+    try {
+        const queue = await prisma.queue.findUnique({
+            where: { id: queueId },
+            include: {
+                appointment: { include: { patient: true, doctor: true, department: true } },
+            },
+        });
+        if (!queue || queue.status === previousStatus) return;
+
+        await notifyQueueEvent({
+            queue,
+            type: queue.status === "CALLED" ? "PATIENT_CALLED" : "QUEUE_UPDATED",
+            eventKey:
+                queue.status === "CALLED" && queue.calledAt
+                    ? `queue-called:${queue.id}:${queue.calledAt.toISOString()}`
+                    : `queue-status:${queue.id}:${queue.status}`,
+        });
+    } catch (error) {
+        console.error("Queue notification failed:", error);
+    }
+};
+
+// Allowed moves. A patient only moves forward, one step at a time.
+const NEXT_STATUS = {
+    WAITING: "CALLED",
+    CALLED: "IN_CONSULTATION",
+    IN_CONSULTATION: "COMPLETED",
+};
+const APPOINTMENT_STATUS_FOR = {
+    IN_CONSULTATION: "IN_PROGRESS",
+    COMPLETED: "COMPLETED",
+};
+const STATUS_LABEL = {
+    WAITING: "waiting",
+    CALLED: "called",
+    IN_CONSULTATION: "in consultation",
+    COMPLETED: "completed",
+};
+
+// Moves one of today's queue entries to `nextStatus` in ONE transaction,
+// keeping the appointment status in step. `queueId` is the Queue row id.
+const moveQueueEntry = async (queueId, nextStatus) =>
+    withRetry(() =>
+        prisma.$transaction(
+            async (tx) => {
+                const { start, end } = dayRange();
+
+                const entry = await tx.queue.findUnique({
+                    where: { id: queueId },
+                    include: {
+                        appointment: {
+                            include: {
+                                patient: { select: { firstName: true, lastName: true } },
+                                doctor: { select: { firstName: true, lastName: true } },
+                            },
+                        },
+                    },
+                });
+
+                if (!entry) throw new ActionError(404, "Queue entry not found.");
+                const { appointment } = entry;
+
+                if (appointment.date < start || appointment.date >= end) {
+                    throw new ActionError(400, "Only today's queue can be updated.");
+                }
+                if (appointment.status === "CANCELLED") {
+                    throw new ActionError(409, "This appointment was cancelled.");
+                }
+                if (nextStatus === "CALLED" && appointment.status !== "CHECKED_IN") {
+                    throw new ActionError(409, "This patient is not checked in.");
+                }
+                if (NEXT_STATUS[entry.status] !== nextStatus) {
+                    throw new ActionError(
+                        409,
+                        `This patient is ${STATUS_LABEL[entry.status]} and cannot be moved to ${STATUS_LABEL[nextStatus]}. Refresh and try again.`
+                    );
+                }
+
+                const data = { status: nextStatus };
+                if (nextStatus === "CALLED") data.calledAt = new Date();
+
+                // Only matches if nobody changed the entry in the meantime.
+                const claimed = await tx.queue.updateMany({
+                    where: { id: queueId, status: entry.status },
+                    data,
+                });
+                if (claimed.count === 0) {
+                    throw new ActionError(
+                        409,
+                        "This patient was just updated. Refresh and try again."
+                    );
+                }
+
+                const appointmentStatus = APPOINTMENT_STATUS_FOR[nextStatus];
+                if (appointmentStatus) {
+                    await tx.appointment.update({
+                        where: { id: appointment.id },
+                        data: { status: appointmentStatus },
+                    });
+                }
+
+                return { entry, previousStatus: entry.status };
+            },
+            { isolationLevel: "Serializable" }
+        )
+    );
+
+const describeMove = (entry, nextStatus) => {
+    const name = fullName(entry.appointment.patient);
+    const number = pad(entry.queueNumber);
+    const doctor = `Dr. ${fullName(entry.appointment.doctor)}`;
+
+    if (nextStatus === "CALLED") return `Called ${name} (queue ${number}) to see ${doctor}.`;
+    if (nextStatus === "IN_CONSULTATION") return `${name} (queue ${number}) is now in consultation.`;
+    return `${name}'s (queue ${number}) consultation was completed.`;
+};
+
+const parseQueueId = (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+        res.status(400).json({ message: "Invalid queue ID" });
+        return null;
+    }
+    return id;
+};
+
+const runMove = async (req, res, nextStatus, fallback) => {
+    const id = parseQueueId(req, res);
+    if (id === null) return;
+
+    try {
+        const { entry, previousStatus } = await moveQueueEntry(id, nextStatus);
+        await notifyQueueChange(id, previousStatus);
+
+        res.json({
+            message: describeMove(entry, nextStatus),
+            queueNumber: entry.queueNumber,
+            status: nextStatus,
+        });
+    } catch (error) {
+        sendActionError(res, error, fallback);
+    }
+};
+
+// POST /api/receptionist/queue/:id/call - call one specific waiting patient.
+const callSpecificPatient = (req, res) =>
+    runMove(req, res, "CALLED", "Failed to call the patient");
+
+// PATCH /api/receptionist/queue/:id/status  body: { status }
+const updateQueueStatus = (req, res) => {
+    const status = req.body && req.body.status;
+    if (!Object.values(NEXT_STATUS).includes(status)) {
+        return res.status(400).json({
+            message: "Status must be CALLED, IN_CONSULTATION or COMPLETED.",
+        });
+    }
+    return runMove(req, res, status, "Failed to update the queue");
+};
+
 module.exports = {
     getOverview,
     getAppointments,
@@ -461,4 +630,6 @@ module.exports = {
     getPatients,
     checkInAppointment,
     callNextPatient,
+    callSpecificPatient,
+    updateQueueStatus,
 };
