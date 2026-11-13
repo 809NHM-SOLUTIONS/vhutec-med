@@ -191,7 +191,7 @@ const ensureDoctorShiftAvailability = async (
         const start = parseShiftTime(period.startTime);
         const end = parseShiftTime(period.endTime);
 
-        if (start === null || end === null || start === end) {
+        if (start === null || end === null || (start === end && !period.endDayOffset)) {
             return false;
         }
 
@@ -200,7 +200,7 @@ const ensureDoctorShiftAvailability = async (
 
         const periodEnd =
             periodDate.getTime() / 60000 +
-            (end < start ? end + 1440 : end);
+            end + 1440 * (period.endDayOffset ?? (end < start ? 1 : 0));
 
         return (
             appointmentStart >= periodStart &&
@@ -282,7 +282,7 @@ const getBookedSlots = async (req, res) => {
             return (
                 validTime(period.startTime) &&
                 validTime(period.endTime) &&
-                period.startTime !== period.endTime
+                (period.startTime !== period.endTime || period.endDayOffset === 1)
             );
         };
 
@@ -294,7 +294,7 @@ const getBookedSlots = async (req, res) => {
         const hasPreviousDayOvernightAvailability =
             previousPeriods.some((period) =>
                 isValidPeriod(period) &&
-                period.endTime < period.startTime
+                (period.endDayOffset === 1 || period.endTime < period.startTime)
             );
 
         const isAvailable =
@@ -327,7 +327,7 @@ const getBookedSlots = async (req, res) => {
                     previousDay: previousPeriods.filter(
                         (period) =>
                             isValidPeriod(period) &&
-                            period.endTime < period.startTime
+                            (period.endDayOffset === 1 || period.endTime < period.startTime)
                     )
                 }
             }
@@ -797,11 +797,13 @@ const {
 
         const parsedDoctorId = Number(doctorId);
         const parsedDepartmentId = Number(departmentId);
-        const parsedConsultationTypeId = Number(consultationTypeId);
+        const parsedConsultationTypeId = consultationTypeId == null
+            ? null
+            : Number(consultationTypeId);
 
 if (
-    !Number.isInteger(parsedConsultationTypeId) ||
-    parsedConsultationTypeId <= 0
+    parsedConsultationTypeId !== null &&
+    (!Number.isInteger(parsedConsultationTypeId) || parsedConsultationTypeId <= 0)
 ) {
     return res.status(400).json({
         success: false,
@@ -875,23 +877,27 @@ if (
             });
         }
 
-        const consultationType = await prisma.consultationType.findFirst({
-    where: {
-        id: parsedConsultationTypeId,
-        departmentId: parsedDepartmentId,
-        isActive: true
-    }
-});
+        // Standard bookings use the existing scheduling fallback. Typed bookings
+        // retain department/active validation and their configured duration.
+        let durationMinutes = 60;
+        if (parsedConsultationTypeId !== null) {
+            const consultationType = await prisma.consultationType.findFirst({
+                where: {
+                    id: parsedConsultationTypeId,
+                    departmentId: parsedDepartmentId,
+                    isActive: true
+                }
+            });
 
-if (!consultationType) {
-    return res.status(400).json({
-        success: false,
-        message:
-            "The selected consultation type is invalid, inactive, or does not belong to this department."
-    });
-}
-
-const durationMinutes = consultationType.durationMinutes;
+            if (!consultationType) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "The selected consultation type is invalid, inactive, or does not belong to this department."
+                });
+            }
+            durationMinutes = consultationType.durationMinutes;
+        }
 
         const doctorDepartment =
             await prisma.doctorDepartment.findUnique({
@@ -1621,6 +1627,8 @@ if (!["PENDING", "CONFIRMED"].includes(existingAppointment.status)) {
 
 
 module.exports = {
+    ensureDoctorShiftAvailability,
+    hasAppointmentOverlap,
     getAppointments,
     getMyAppointments,
     getBookedSlots,

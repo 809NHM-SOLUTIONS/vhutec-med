@@ -1,3 +1,4 @@
+const { resolveAvailability } = require("./doctorAvailability");
 
 const getIsoDayOfWeek = (date) => {
     const day = date.getUTCDay();
@@ -35,7 +36,7 @@ const getDoctorShiftPeriods = async (tx, doctorId, appointmentDate) => {
     const currentDay = getIsoDayOfWeek(dayStart);
     const previousDayOfWeek = getIsoDayOfWeek(previousDay);
 
-    const [shifts, exceptions] = await Promise.all([
+    const [shifts, exceptions, configuredShiftCount] = await Promise.all([
         tx.staffShift.findMany({
             where: {
                 userId: doctor.userId,
@@ -67,8 +68,15 @@ const getDoctorShiftPeriods = async (tx, doctorId, appointmentDate) => {
                     }
                 }
             }
-        })
+        }),
+        // Count inactive and other-day shifts too: neither permits a fallback.
+        tx.staffShift.count({ where: { userId: doctor.userId } })
     ]);
+    // Legacy doctors manage working hours through DoctorAvailability. Use that
+    // existing schedule only until an explicit staff-shift schedule is configured.
+    const availability = configuredShiftCount === 0
+        ? resolveAvailability(await tx.doctorAvailability.findUnique({ where: { doctorId } }))
+        : null;
     const exceptionMap = new Map(
       exceptions.map((exception) => [
             getDateKey(exception.date),
@@ -79,9 +87,19 @@ const getDoctorShiftPeriods = async (tx, doctorId, appointmentDate) => {
     const periodsForDate = (date, dayOfWeek) => {
         const exception = exceptionMap.get(getDateKey(date));
 
-        const recurring = shifts.filter(
+        let recurring = shifts.filter(
             (shift) => shift.dayOfWeek === dayOfWeek
         );
+
+        if (availability) {
+            // DoctorAvailability.endTime is the last slot start, not closing time.
+            const [hours, minutes] = availability.endTime.split(":").map(Number);
+            const closingMinutes = hours * 60 + minutes + availability.slotMinutes;
+            const closingTime = `${String(Math.floor(closingMinutes / 60) % 24).padStart(2, "0")}:${String(closingMinutes % 60).padStart(2, "0")}`;
+            recurring = availability.workingDays.includes(date.getUTCDay())
+                ? [{ startTime: availability.startTime, endTime: closingTime, endDayOffset: Math.floor(closingMinutes / 1440) }]
+                : [];
+        }
 
         if (!exception) return recurring;
 

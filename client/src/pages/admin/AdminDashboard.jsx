@@ -13,58 +13,125 @@ import {
   FiSettings,
   FiUserCheck,
   FiUsers,
-  FiX
+  FiX,
+   FiSearch,
 } from "react-icons/fi";
+
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
+
+import { FiDownload, FiFilter } from "react-icons/fi";
+
 import "./AdminDashboard.css";
 
+const filterAdminRecords = (records, query) => {
+  const search = query.trim().toLowerCase();
+
+  if (!search) return records;
+
+  return records.filter((record) => {
+    const firstName =
+      record.firstName ??
+      record.patient?.firstName ??
+      record.doctor?.firstName ??
+      record.receptionist?.firstName ??
+      record.profile?.firstName ??
+      "";
+
+    const lastName =
+      record.lastName ??
+      record.patient?.lastName ??
+      record.doctor?.lastName ??
+      record.receptionist?.lastName ??
+      record.profile?.lastName ??
+      "";
+
+    const email = record.email ?? record.user?.email ?? "";
+
+    return [
+      firstName,
+      lastName,
+      `${firstName} ${lastName}`,
+      record.fullName ?? "",
+      email,
+    ].some((value) =>
+      String(value).toLowerCase().includes(search)
+    );
+  });
+};
 
 const AdminDashboard = () => {
 
-
   const [activeSection, setActiveSection] = useState("Dashboard");
 
-const [dashboardStats, setDashboardStats] = useState(null);
-const [dashboardLoading, setDashboardLoading] = useState(true);
-const [dashboardError, setDashboardError] = useState("");
+  const [dashboardStats, setDashboardStats] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState("");
+
+  const [adminSearch, setAdminSearch] = useState({
+  Users: "",
+  Doctors: "",
+  Receptionists: "",
+  Patients: "",
+});
+
+  const [reportPeriod, setReportPeriod] = useState("month");
+  const [reportFrom, setReportFrom] = useState("");
+  const [reportTo, setReportTo] = useState("");
+
+  const [reportData, setReportData] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [reportDownloading, setReportDownloading] = useState("");
+
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [showDoctorForm, setShowDoctorForm] = useState(false);
   const [showReceptionistForm, setShowReceptionistForm] = useState(false);
 
   const [departments, setDepartments] = useState([]);
-const [doctors, setDoctors] = useState([]);
-const [doctorsLoading, setDoctorsLoading] = useState(true);
+  const [doctors, setDoctors] = useState([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(true);
 
-const [selectedDoctor, setSelectedDoctor] = useState(null);
-const [showDoctorDetails, setShowDoctorDetails] = useState(false);
-const [doctorModalMode, setDoctorModalMode] = useState("view");
-const [doctorActionLoading, setDoctorActionLoading] = useState(false);
-const [doctorMessage, setDoctorMessage] = useState(null);
+  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [showDoctorDetails, setShowDoctorDetails] = useState(false);
+  const [doctorModalMode, setDoctorModalMode] = useState("view");
+  const [doctorActionLoading, setDoctorActionLoading] = useState(false);
+  const [doctorMessage, setDoctorMessage] = useState(null);
 
-const [editDoctorForm, setEditDoctorForm] = useState({
-  firstName: "",
-  lastName: "",
-  phone: "",
-  speciality: "",
-  licenseNo: "",
-});
+  const [editDoctorForm, setEditDoctorForm] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    speciality: "",
+    licenseNo: "",
+  });
 
-const [receptionists, setReceptionists] = useState([]);
-const [receptionistsLoading, setReceptionistsLoading] = useState(true);
-const [selectedReceptionist, setSelectedReceptionist] = useState(null);
-const [showReceptionistDetails, setShowReceptionistDetails] = useState(false);
-const [receptionistModalMode, setReceptionistModalMode] = useState("view");
-const [receptionistActionLoading, setReceptionistActionLoading] = useState(false);
-const [receptionistMessage, setReceptionistMessage] = useState(null);
-const [registeredUsers, setRegisteredUsers] = useState([]);
-const [usersLoading, setUsersLoading] = useState(true);
-const [usersError, setUsersError] = useState("");
+  const [receptionists, setReceptionists] = useState([]);
+  const [receptionistsLoading, setReceptionistsLoading] = useState(true);
+  const [selectedReceptionist, setSelectedReceptionist] = useState(null);
+  const [showReceptionistDetails, setShowReceptionistDetails] = useState(false);
+  const [receptionistModalMode, setReceptionistModalMode] = useState("view");
+  const [receptionistActionLoading, setReceptionistActionLoading] = useState(false);
+  const [receptionistMessage, setReceptionistMessage] = useState(null);
+  const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState("");
 
-const [editReceptionistForm, setEditReceptionistForm] = useState({
-  firstName: "",
-  lastName: "",
-  phone: "",
-});
+  const [editReceptionistForm, setEditReceptionistForm] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+  });
 
   const [doctorForm, setDoctorForm] = useState({
     firstName: "",
@@ -99,23 +166,22 @@ const [editReceptionistForm, setEditReceptionistForm] = useState({
   ];
 
   const [patients, setPatients] = useState([]);
-const [patientsLoading, setPatientsLoading] = useState(true);
-const [patientsError, setPatientsError] = useState("");
-const [selectedPatient, setSelectedPatient] = useState(null);
-const [showPatientForm, setShowPatientForm] = useState(false);
-const [patientForm, setPatientForm] = useState({
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [patientsError, setPatientsError] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [showPatientForm, setShowPatientForm] = useState(false);
+  const [patientForm, setPatientForm] = useState({
     firstName: "",
     lastName: "",
     dob: "",
     phone: "",
-    address: "",
-});
-const [patientSaving, setPatientSaving] = useState(false);
-const [patientMessage, setPatientMessage] = useState(null);
-const [patientModalMode, setPatientModalMode] = useState("view");
+      address: "",
+  });
+  const [patientSaving, setPatientSaving] = useState(false);
+  const [patientMessage, setPatientMessage] = useState(null);
+  const [patientModalMode, setPatientModalMode] = useState("view");
 
-
-const recentAppointments = dashboardStats?.recentAppointments || [];
+  const recentAppointments = dashboardStats?.recentAppointments || [];
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -239,14 +305,14 @@ const recentAppointments = dashboardStats?.recentAppointments || [];
       });
 
      setReceptionistForm({
-  firstName: "",
-  lastName: "",
-  email: "",
-  phone: ""
-});
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: ""
+      });
 
-await loadReceptionists();
-await loadUsers();
+      await loadReceptionists();
+      await loadUsers();
 
     } catch (error) {
       console.error("Create receptionist error:", error);
@@ -266,7 +332,11 @@ await loadUsers();
   };
 
 
-
+useEffect(() => {
+  if (activeSection === "Reports") {
+    loadAdminReport();
+  }
+}, [activeSection, reportPeriod, reportFrom, reportTo]);
 
     useEffect(() => {
     const loadDepartments = async () => {
@@ -299,34 +369,132 @@ await loadUsers();
 
 
 
-const loadDashboardStats = async () => {
-  setDashboardLoading(true);
-  setDashboardError("");
+  const loadDashboardStats = async () => {
+    setDashboardLoading(true);
+    setDashboardError("");
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const response = await axios.get(
+        "http://localhost:5000/api/admin/dashboard/stats",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      setDashboardStats(response.data?.data || null);
+    } catch (error) {
+      console.error("Failed to load dashboard statistics:", error);
+
+      setDashboardError(
+        error.response?.data?.message ||
+        "Unable to load dashboard statistics."
+      );
+    } finally {
+      setDashboardLoading(false);
+    }
+  };
+
+
+const loadAdminReport = async () => {
+  const { from, to } = getReportDates(
+    reportPeriod,
+    reportFrom,
+    reportTo
+  );
+
+  if (!from || !to || from > to) {
+    setReportError("Please select a valid reporting date range.");
+    return;
+  }
+
+  setReportLoading(true);
+  setReportError("");
 
   try {
     const token = localStorage.getItem("token");
 
     const response = await axios.get(
-      "http://localhost:5000/api/admin/dashboard/stats",
+      "http://localhost:5000/api/admin/dashboard/reports",
       {
+        params: { from, to },
         headers: {
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       }
     );
 
-    setDashboardStats(response.data?.data || null);
+    setReportData(response.data.data);
   } catch (error) {
-    console.error("Failed to load dashboard statistics:", error);
+    console.error("Failed to load admin report:", error);
 
-    setDashboardError(
+    setReportError(
       error.response?.data?.message ||
-      "Unable to load dashboard statistics."
+      "Unable to load the report."
     );
   } finally {
-    setDashboardLoading(false);
+    setReportLoading(false);
   }
 };
+
+const downloadAdminReport = async (format) => {
+  const { from, to } = getReportDates(
+    reportPeriod,
+    reportFrom,
+    reportTo
+  );
+
+  if (!from || !to || from > to) {
+    setReportError("Please select a valid reporting date range.");
+    return;
+  }
+
+  setReportDownloading(format);
+  setReportError("");
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await axios.get(
+      "http://localhost:5000/api/admin/dashboard/reports/export",
+      {
+        params: { format, from, to },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        responseType: "blob",
+      }
+    );
+
+    const blob = new Blob([response.data], {
+      type:
+        format === "pdf"
+          ? "application/pdf"
+          : "text/csv;charset=utf-8",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `vhutec-med-report-${from}-to-${to}.${format}`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("Report download failed:", error);
+    setReportError("Unable to download the report.");
+  } finally {
+    setReportDownloading("");
+  }
+};
+
 
   const loadDoctors = async () => {
   try {
@@ -355,6 +523,52 @@ const loadDashboardStats = async () => {
     setDoctorsLoading(false);
   }
 };
+
+
+const getLocalDate = (date = new Date()) => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Johannesburg",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+};
+
+const getReportDates = (period, customFrom, customTo) => {
+  const today = getLocalDate();
+  const todayDate = new Date(`${today}T12:00:00Z`);
+
+  if (period === "custom") {
+    return { from: customFrom, to: customTo };
+  }
+
+  if (period === "today") {
+    return { from: today, to: today };
+  }
+
+  if (period === "week") {
+    const start = new Date(todayDate);
+    start.setUTCDate(start.getUTCDate() - 6);
+
+    return {
+      from: start.toISOString().slice(0, 10),
+      to: today,
+    };
+  }
+
+  if (period === "year") {
+    return {
+      from: `${today.slice(0, 4)}-01-01`,
+      to: today,
+    };
+  }
+
+  return {
+    from: `${today.slice(0, 7)}-01`,
+    to: today,
+  };
+};
+
 
 
 const loadUsers = async () => {
@@ -465,6 +679,9 @@ useEffect(() => {
 useEffect(() => {
   loadUsers();
 }, []);
+
+
+
 
   const renderDashboard = () => (
     <>
@@ -716,6 +933,42 @@ useEffect(() => {
     </>
   );
 
+
+const renderAdminSearch = (section, placeholder) => (
+  <div className="admin-directory-search">
+    <FiSearch className="admin-directory-search-icon" />
+
+    <input
+      type="search"
+      aria-label={`Search ${section.toLowerCase()}`}
+      placeholder={placeholder}
+      value={adminSearch[section]}
+      onChange={(event) =>
+        setAdminSearch((previous) => ({
+          ...previous,
+          [section]: event.target.value,
+        }))
+      }
+    />
+
+    {adminSearch[section] && (
+      <button
+        type="button"
+        className="admin-directory-search-clear"
+        onClick={() =>
+          setAdminSearch((previous) => ({
+            ...previous,
+            [section]: "",
+          }))
+        }
+        aria-label="Clear search"
+      >
+        <FiX />
+      </button>
+    )}
+  </div>
+);
+
     const renderUsers = () => (
     <>
       <div className="admin-section-header">
@@ -855,6 +1108,11 @@ useEffect(() => {
           </div>
         </div>
 
+        {renderAdminSearch(
+  "Users",
+  "Search users by name or email..."
+)}
+
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>
@@ -893,8 +1151,14 @@ useEffect(() => {
         No registered users found.
       </td>
     </tr>
+  ) : filterAdminRecords(registeredUsers, adminSearch.Users).length === 0 ? (
+    <tr>
+      <td colSpan="4" className="admin-empty-state">
+        No matching records found
+      </td>
+    </tr>
   ) : (
-    registeredUsers.map((user) => (
+    filterAdminRecords(registeredUsers, adminSearch.Users).map((user) => (
       <tr key={user.id}>
         <td>
           <div className="admin-user-cell">
@@ -1222,6 +1486,11 @@ const handleDeleteDoctor = async (doctor) => {
           </div>
         </div>
 
+        {renderAdminSearch(
+  "Doctors",
+  "Search doctors by name or email..."
+)}
+
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>
@@ -1246,8 +1515,14 @@ const handleDeleteDoctor = async (doctor) => {
                 No doctors have been registered yet.
             </td>
         </tr>
+    ) : filterAdminRecords(doctors, adminSearch.Doctors).length === 0 ? (
+        <tr>
+            <td colSpan="5">
+                No matching records found
+            </td>
+        </tr>
     ) : (
-        doctors.map((doctor) => (
+        filterAdminRecords(doctors, adminSearch.Doctors).map((doctor) => (
             <tr key={doctor.id}>
                 <td>
                     Dr. {doctor.firstName} {doctor.lastName}
@@ -1761,6 +2036,11 @@ const handleDeleteReceptionist = async (receptionist) => {
           </p>
         </div>
 
+{renderAdminSearch(
+  "Receptionists",
+  "Search receptionists by name or email..."
+)}
+
         <span className="admin-card-count">
           {receptionists.length}{" "}
           {receptionists.length === 1
@@ -1794,8 +2074,14 @@ const handleDeleteReceptionist = async (receptionist) => {
                   No receptionists have been registered yet.
                 </td>
               </tr>
+            ) : filterAdminRecords(receptionists, adminSearch.Receptionists).length === 0 ? (
+              <tr>
+                <td colSpan="5">
+                  No matching records found
+                </td>
+              </tr>
             ) : (
-              receptionists.map((receptionist) => (
+              filterAdminRecords(receptionists, adminSearch.Receptionists).map((receptionist) => (
                 <tr key={receptionist.id}>
                   <td>
                     {receptionist.firstName}{" "}
@@ -1986,6 +2272,11 @@ const handleDeletePatient = async (patient) => {
           <p>Patient information retrieved from the database.</p>
         </div>
 
+{renderAdminSearch(
+  "Patients",
+  "Search patients by name or email..."
+)}
+
         <span className="admin-card-count">
           {patients.length} {patients.length === 1 ? "Patient" : "Patients"}
         </span>
@@ -2006,11 +2297,16 @@ const handleDeletePatient = async (patient) => {
             Retry
           </button>
         </div>
-      ) : patients.length === 0 ? (
-        <div className="admin-empty-state">
-          No registered patients were found in the database.
-        </div>
-      ) : (
+    ) : patients.length === 0 ? (
+  <div className="admin-empty-state">
+    No registered patients were found in the database.
+  </div>
+) : adminSearch.Patients.trim() &&
+    filterAdminRecords(patients, adminSearch.Patients).length === 0 ? (
+  <div className="admin-empty-state">
+    No matching records found
+  </div>
+) : (
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>
@@ -2024,7 +2320,7 @@ const handleDeletePatient = async (patient) => {
             </thead>
 
             <tbody>
-              {patients.map((patient) => (
+  {filterAdminRecords(patients, adminSearch.Patients).map((patient) => (
                 <tr key={patient.id}>
                   <td>
                     {patient.firstName} {patient.lastName}
@@ -2421,40 +2717,20 @@ const renderAppointments = () => {
 
 
 const renderReports = () => {
-  const appointments = dashboardStats?.recentAppointments || [];
-  const appointmentStatuses = dashboardStats?.appointmentStatuses || {};
+  const summary = reportData?.summary || {};
+  const trends = reportData?.trends || [];
+  const departments = reportData?.departments || [];
+  const doctors = reportData?.doctors || [];
+  const statuses = reportData?.appointmentStatuses || {};
 
-  const completedAppointments =
-    appointmentStatuses.COMPLETED ?? 0;
-
-  const totalAppointments = dashboardStats?.appointments ?? 0;
-
-  // Summarise the recent appointments returned by the dashboard API.
-  const departmentStats = appointments.reduce((groups, appointment) => {
-    const departmentName =
-      appointment.department?.name || "Unassigned";
-
-    if (!groups[departmentName]) {
-      groups[departmentName] = {
-        name: departmentName,
-        appointments: 0,
-        completed: 0,
-        otherStatuses: 0,
-      };
-    }
-
-    groups[departmentName].appointments += 1;
-
-    if (appointment.status?.toUpperCase() === "COMPLETED") {
-      groups[departmentName].completed += 1;
-    } else {
-      groups[departmentName].otherStatuses += 1;
-    }
-
-    return groups;
-  }, {});
-
-  const departmentRows = Object.values(departmentStats);
+  const cards = [
+    ["Patient Registrations", summary.patientRegistrations],
+    ["New User Accounts", summary.newUserAccounts],
+    ["Appointments Booked", summary.appointmentsBooked],
+    ["Scheduled Appointments", summary.appointmentsScheduled],
+    ["Completed Consultations", summary.consultationsCompleted],
+    ["Patient Check-ins", summary.patientCheckIns],
+  ];
 
   return (
     <>
@@ -2462,106 +2738,239 @@ const renderReports = () => {
         <div>
           <h2>Reports & Analytics</h2>
           <p>
-            Review hospital activity and operational performance
-            using database records.
+            Monitor hospital performance and download operational reports.
           </p>
         </div>
       </div>
 
+      <section className="admin-card">
+        <div className="admin-reports-toolbar">
+          <div className="admin-report-filter">
+            <FiFilter />
+
+            <select
+              value={reportPeriod}
+              onChange={(event) => setReportPeriod(event.target.value)}
+            >
+              <option value="today">Today</option>
+              <option value="week">Last 7 Days</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+
+          {reportPeriod === "custom" && (
+            <div className="admin-report-dates">
+              <input
+                type="date"
+                value={reportFrom}
+                onChange={(event) => setReportFrom(event.target.value)}
+              />
+
+              <input
+                type="date"
+                value={reportTo}
+                onChange={(event) => setReportTo(event.target.value)}
+              />
+            </div>
+          )}
+
+          <div className="admin-report-actions">
+            <button
+              className="admin-secondary-button"
+              onClick={() => downloadAdminReport("csv")}
+              disabled={!!reportDownloading || reportLoading}
+            >
+              <FiDownload />
+              {reportDownloading === "csv"
+                ? "Downloading..."
+                : "Download CSV"}
+            </button>
+
+            <button
+              className="admin-primary-button"
+              onClick={() => downloadAdminReport("pdf")}
+              disabled={!!reportDownloading || reportLoading}
+            >
+              <FiDownload />
+              {reportDownloading === "pdf"
+                ? "Downloading..."
+                : "Download PDF"}
+            </button>
+          </div>
+        </div>
+
+        {reportData?.period && (
+          <p className="admin-report-period">
+            Reporting period: {reportData.period.from} to{" "}
+            {reportData.period.to}
+          </p>
+        )}
+      </section>
+
+      {reportError && (
+        <div className="admin-message error">
+          {reportError}
+          <button
+            className="admin-secondary-button"
+            onClick={loadAdminReport}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <section className="admin-info-grid">
-        <div className="admin-info-item">
-          <span>Total Appointments</span>
-          <strong>
-            {dashboardLoading
-              ? "..."
-              : dashboardError
-                ? "—"
-                : totalAppointments}
-          </strong>
-        </div>
-
-        <div className="admin-info-item">
-          <span>Completed Appointments</span>
-          <strong>
-            {dashboardLoading
-              ? "..."
-              : dashboardError
-                ? "—"
-                : completedAppointments}
-          </strong>
-        </div>
-
-        <div className="admin-info-item">
-          <span>Patients Served</span>
-          <strong>Not available</strong>
-        </div>
-
-        <div className="admin-info-item">
-          <span>Average Wait Time</span>
-          <strong>Not available</strong>
-        </div>
+        {cards.map(([label, value]) => (
+          <div className="admin-info-item" key={label}>
+            <span>{label}</span>
+            <strong>
+              {reportLoading ? "..." : reportError ? "—" : value ?? 0}
+            </strong>
+          </div>
+        ))}
       </section>
 
       <section className="admin-card">
         <div className="admin-card-header">
           <div>
-            <h3>Department Performance</h3>
-            <p>
-              Breakdown of appointments returned by the dashboard API.
-              These figures represent recent records, not necessarily
-              every appointment in the database.
-            </p>
+            <h3>Hospital Activity Trends</h3>
+            <p>Daily registrations, bookings and completed consultations.</p>
+          </div>
+          <FiActivity />
+        </div>
+
+        <div className="admin-report-chart">
+          {reportLoading ? (
+            <p>Loading chart...</p>
+          ) : trends.length === 0 ? (
+            <p>No activity available for this period.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={320}>
+              <LineChart data={trends}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="appointments"
+                  name="Bookings"
+                  stroke="#0f766e"
+                  strokeWidth={2}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="registrations"
+                  name="Registrations"
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="consultations"
+                  name="Consultations"
+                  stroke="#d97706"
+                  strokeWidth={2}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </section>
+
+      <div className="admin-dashboard-grid">
+        <section className="admin-card">
+          <div className="admin-card-header">
+            <div>
+              <h3>Department Performance</h3>
+              <p>Appointments booked during the selected period.</p>
+            </div>
           </div>
 
-          <span className="admin-card-count">
-            {departmentRows.length} Departments
-          </span>
+          <div className="admin-table-wrapper">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th>Appointments</th>
+                </tr>
+              </thead>
+              <tbody>
+                {departments.length === 0 ? (
+                  <tr>
+                    <td colSpan="2">No department activity.</td>
+                  </tr>
+                ) : (
+                  departments.map((item) => (
+                    <tr key={item.name}>
+                      <td>{item.name}</td>
+                      <td>{item.appointments}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="admin-card">
+          <div className="admin-card-header">
+            <div>
+              <h3>Appointment Statuses</h3>
+              <p>Current status of appointments booked in this period.</p>
+            </div>
+          </div>
+
+          <div className="admin-table-wrapper">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(statuses).map(([status, count]) => (
+                  <tr key={status}>
+                    <td>{status.replace(/_/g, " ")}</td>
+                    <td>{count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <section className="admin-card">
+        <div className="admin-card-header">
+          <div>
+            <h3>Doctor Activity</h3>
+            <p>Appointment bookings by doctor.</p>
+          </div>
         </div>
 
         <div className="admin-table-wrapper">
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Department</th>
-                <th>Recent Appointments</th>
-                <th>Completed</th>
-                <th>Other Statuses</th>
+                <th>Doctor</th>
+                <th>Appointments</th>
               </tr>
             </thead>
-
             <tbody>
-              {dashboardLoading ? (
+              {doctors.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="admin-empty-state">
-                    Loading report data...
-                  </td>
-                </tr>
-              ) : dashboardError ? (
-                <tr>
-                  <td colSpan="4" className="admin-empty-state">
-                    {dashboardError}
-                    <button
-                      type="button"
-                      className="admin-secondary-button"
-                      onClick={loadDashboardStats}
-                    >
-                      Retry
-                    </button>
-                  </td>
-                </tr>
-              ) : departmentRows.length === 0 ? (
-                <tr>
-                  <td colSpan="4" className="admin-empty-state">
-                    No recent appointment records available.
-                  </td>
+                  <td colSpan="2">No doctor activity.</td>
                 </tr>
               ) : (
-                departmentRows.map((department) => (
-                  <tr key={department.name}>
-                    <td>{department.name}</td>
-                    <td>{department.appointments}</td>
-                    <td>{department.completed}</td>
-                    <td>{department.otherStatuses}</td>
+                doctors.map((doctor) => (
+                  <tr key={doctor.name}>
+                    <td>{doctor.name}</td>
+                    <td>{doctor.appointments}</td>
                   </tr>
                 ))
               )}
@@ -2572,6 +2981,7 @@ const renderReports = () => {
     </>
   );
 };
+
 
   const renderSettings = () => (
     <>

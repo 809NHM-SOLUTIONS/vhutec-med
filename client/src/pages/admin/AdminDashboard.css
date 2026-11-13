@@ -1069,3 +1069,141 @@
   margin-top: 8px;
   margin-bottom: 0;
 }
+
+
+
+/* Admin Reports & Analytics */
+
+.admin-reports-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.admin-report-filter,
+.admin-report-dates,
+.admin-report-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-report-filter select,
+.admin-report-dates input {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--admin-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.admin-report-filter svg {
+  color: var(--admin-primary);
+}
+
+.admin-report-period {
+  margin: 14px 0 0;
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.admin-report-chart {
+  width: 100%;
+  min-height: 320px;
+}
+
+@media (max-width: 700px) {
+  .admin-reports-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-report-filter select {
+    flex: 1;
+  }
+
+  .admin-report-dates input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .admin-report-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-report-actions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-report-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Admin directory search */
+
+.admin-directory-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 440px);
+  min-height: 46px;
+  margin: 16px 20px;
+  padding: 0 14px;
+  border: 1px solid #dce5e9;
+  border-radius: 12px;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.admin-directory-search:focus-within {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
+}
+
+.admin-directory-search-icon {
+  flex-shrink: 0;
+  color: #64748b;
+  font-size: 17px;
+}
+
+.admin-directory-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #172033;
+  font: inherit;
+  font-size: 13px;
+}
+
+.admin-directory-search input::placeholder {
+  color: #94a3b8;
+}
+
+.admin-directory-search-clear {
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  .admin-directory-search {
+    width: auto;
+    margin: 14px;
+  }
+}

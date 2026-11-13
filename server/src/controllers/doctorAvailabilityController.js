@@ -1,5 +1,9 @@
 const prisma = require("../prisma");
 const {
+    ensureDoctorShiftAvailability,
+    hasAppointmentOverlap
+} = require("./appointmentController");
+const {
     DEFAULT_AVAILABILITY,
     ALLOWED_SLOT_MINUTES,
     parseDateKey,
@@ -214,6 +218,30 @@ const getDoctorAvailability = async (req, res) => {
                 dateKey,
                 bookedTimeSlots: booked
             });
+
+            // Standard bookings use the same 60-minute fallback as creation.
+            // Reuse its shift/duration and overlap checks rather than exposing
+            // slots that submission will reject. Submission still rechecks races.
+            const date = parseDateKey(dateKey);
+            const slots = [];
+            for (const slot of data.day.slots) {
+                try {
+                    await ensureDoctorShiftAvailability(prisma, doctorId, date, slot.time);
+                } catch (error) {
+                    if (error.code === "DOCTOR_SHIFT_UNAVAILABLE") continue;
+                    throw error;
+                }
+
+                const overlaps = await hasAppointmentOverlap(prisma, {
+                    doctorId, date, timeSlot: slot.time
+                });
+                slots.push({ ...slot, status: overlaps ? "booked" : slot.status });
+            }
+            data.day.slots = slots;
+            data.day.available = slots.some((slot) => slot.status === "available");
+            if (!data.day.available && !data.day.reason) {
+                data.day.reason = "FULLY_BOOKED";
+            }
         }
 
         return res.json({ success: true, data });

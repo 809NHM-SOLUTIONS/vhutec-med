@@ -12,7 +12,8 @@ let checkInProgress = false;
 const getAppointmentInstant = (appointment) => {
     const date = appointment.date;
 
-    const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(
+    // Slots may be a start time or a range; missed grace uses the start time.
+    const timeMatch = /^(\d{1,2}):(\d{2})(?:\s*-\s*\d{1,2}:\d{2})?$/.exec(
         appointment.timeSlot || ""
     );
 

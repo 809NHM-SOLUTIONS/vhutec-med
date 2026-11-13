@@ -38,8 +38,8 @@ import { io } from "socket.io-client";
 import NotificationBell from "../../components/notifications/NotificationBell";
 import useNotifications from "../../components/notifications/useNotifications";
 
-// Appointment.status is CANCELLED/COMPLETED => history, everything else => upcoming/active.
-const HISTORY_STATUSES = ["COMPLETED", "CANCELLED"];
+// Official terminal appointment statuses always belong in history.
+const HISTORY_STATUSES = ["COMPLETED", "CANCELLED", "MISSED"];
 
 const TIME_SLOTS = [
   "08:00",
@@ -51,6 +51,26 @@ const TIME_SLOTS = [
   "14:00",
   "15:00",
 ];
+
+// Match the backend: the stored UTC calendar date plus a Johannesburg time slot.
+// Africa/Johannesburg is UTC+02:00 throughout the year.
+function getAppointmentTimestamp(appointment) {
+  const date = new Date(appointment.date);
+  const time = /^(\d{1,2}):(\d{2})(?:\s*-\s*\d{1,2}:\d{2})?$/.exec(appointment.timeSlot || "");
+  if (!appointment.date || Number.isNaN(date.getTime()) || !time) return null;
+
+  const hours = Number(time[1]);
+  const minutes = Number(time[2]);
+  if (hours > 23 || minutes > 59) return null;
+
+  return Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    hours,
+    minutes
+  ) - 2 * 60 * 60 * 1000;
+}
 
 function formatDateDisplay(dateString) {
   if (!dateString) return "";
@@ -244,16 +264,17 @@ function PatientDashboard() {
 
   // ---- This patient's appointments ----
   const [appointments, setAppointments] = useState([]);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
 
-const [currentTime, setCurrentTime] = useState(() => new Date());
-
-useEffect(() => {
-  const timer = setInterval(() => {
-    setCurrentTime(new Date());
-  }, 30_000);
-
-  return () => clearInterval(timer);
-}, []);
+  useEffect(() => {
+    const updateCurrentTime = () => setCurrentTime(Date.now());
+    const timer = setInterval(updateCurrentTime, 30_000);
+    window.addEventListener("focus", updateCurrentTime);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", updateCurrentTime);
+    };
+  }, []);
 
   const [appointmentsLoading, setAppointmentsLoading] = useState(true);
   const [appointmentsError, setAppointmentsError] = useState("");
@@ -407,7 +428,7 @@ useEffect(() => {
       // If a queue or appointment status changes, reload the appointments list!
       // This is what moves the patient from "Upcoming" to "History" automatically.
       if (
-        ["CONSULTATION_COMPLETED", "APPOINTMENT_CANCELLED", "PATIENT_CALLED", "QUEUE_UPDATED"].includes(notification.type)
+        ["CONSULTATION_COMPLETED", "CONSULTATION_STARTED", "APPOINTMENT_CONFIRMED", "APPOINTMENT_RESCHEDULED", "APPOINTMENT_CANCELLED", "APPOINTMENT_MISSED", "PATIENT_CHECKED_IN", "PATIENT_CALLED", "QUEUE_UPDATED"].includes(notification.type)
       ) {
         loadAppointments();
       }
@@ -536,7 +557,7 @@ useEffect(() => {
         setAppointmentForm((current) => ({ ...current, time: "" }));
         setSlotRefreshKey((key) => key + 1);
         setBookingError(
-          "That time was just booked by someone else. Please choose another available time."
+          error.message || "That time was just booked by someone else. Please choose another available time."
         );
       } else {
         setBookingError(
@@ -549,76 +570,22 @@ useEffect(() => {
   };
 
 
-const now = currentTime;
-
-const todayKey = `${now.getFullYear()}-${String(
-  now.getMonth() + 1
-).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-const isAppointmentBeingHandled = (appointment) =>
-  ["CHECKED_IN", "IN_PROGRESS"].includes(appointment.status) ||
-  ["WAITING", "CALLED", "IN_CONSULTATION"].includes(
-    appointment.queue?.status
-  );
-
-
-
-const isAppointmentTimePassed = (appointment) => {
-  if (!appointment.date) return false;
-
-  const dateKey = String(appointment.date).slice(0, 10);
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-    return false;
-  }
-
-  if (dateKey < todayKey) return true;
-  if (dateKey > todayKey) return false;
-
-  const match = /^(\d{1,2}):(\d{2})/.exec(
-    appointment.timeSlot || ""
-  );
-
-  if (!match) return false;
-
-  const appointmentMinutes =
-    Number(match[1]) * 60 + Number(match[2]);
-
-  return appointmentMinutes < currentMinutes;
-};
-
-
-
-
+// Only future slots are upcoming. Keep the official status unchanged in history.
 const upcomingAppointments = appointments.filter((appointment) => {
-  if (HISTORY_STATUSES.includes(appointment.status)) {
-    return false;
-  }
-
-  if (isAppointmentBeingHandled(appointment)) {
-    return true;
-  }
-
-  return !isAppointmentTimePassed(appointment);
+  const timestamp = getAppointmentTimestamp(appointment);
+  return !HISTORY_STATUSES.includes(appointment.status) &&
+    timestamp !== null && timestamp > currentTime;
 });
 
 const historyAppointments = appointments.filter((appointment) => {
-  if (HISTORY_STATUSES.includes(appointment.status)) {
-    return true;
-  }
-
-  return (
-    !isAppointmentBeingHandled(appointment) &&
-    isAppointmentTimePassed(appointment)
-  );
+  const timestamp = getAppointmentTimestamp(appointment);
+  return HISTORY_STATUSES.includes(appointment.status) ||
+    (timestamp !== null && timestamp <= currentTime);
 });
-
 
 const nextAppointment = useMemo(() => {
   const sorted = [...upcomingAppointments].sort(
-    (a, b) => new Date(a.date) - new Date(b.date)
+    (a, b) => getAppointmentTimestamp(a) - getAppointmentTimestamp(b)
   );
 
   return sorted[0] || null;

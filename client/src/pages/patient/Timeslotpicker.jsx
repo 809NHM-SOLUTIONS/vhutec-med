@@ -128,13 +128,13 @@ function TimeSlotPicker({ doctorId, date, value, onChange, refreshKey = 0 }) {
     };
   }, [doctorId, date, refreshKey, retryKey]);
 
-  if (status === "idle") {
+  if (!doctorId || !date) {
     return (
       <p className="slot-message">Select a doctor and a date to see available times.</p>
     );
   }
 
-  if (status === "loading") {
+  if (status === "idle" || status === "loading") {
     return (
       <p className="slot-message" role="status">
         Checking available times...
