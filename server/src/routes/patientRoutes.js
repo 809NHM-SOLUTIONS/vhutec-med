@@ -16,6 +16,9 @@ const roleGuard = require("../middleware/roleGuard");
 
 const router = express.Router();
 
+const { register } = require("../controllers/auth.controller");
+
+
 // Patient portal: patients can view their own profile.
 router.get(
     "/me",
@@ -45,6 +48,14 @@ router.get(
     authenticate,
     roleGuard("ADMIN", "DOCTOR", "RECEPTIONIST"),
     getPatientById
+);
+
+// Receptionist and administrator patient registration.
+router.post(
+    "/register",
+    authenticate,
+    roleGuard("ADMIN", "RECEPTIONIST"),
+    register
 );
 
 // Administrator-only management operations.

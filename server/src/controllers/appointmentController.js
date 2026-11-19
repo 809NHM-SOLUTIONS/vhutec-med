@@ -1209,6 +1209,17 @@ if (req.user?.role === "PATIENT") {
 
 // Only allow status transitions that belong to the general
 // appointment update workflow.
+// Only pending and confirmed appointments can be updated by staff.
+if (!["PENDING", "CONFIRMED"].includes(existingAppointment.status)) {
+    return res.status(400).json({
+        success: false,
+        message:
+            "Only pending or confirmed appointments can be rescheduled or updated."
+    });
+}
+
+// Only allow status transitions that belong to the general
+// appointment update workflow.
 if (status !== undefined && status !== existingAppointment.status) {
     const allowedStatusTransitions = {
         PENDING: ["CONFIRMED", "CANCELLED"],

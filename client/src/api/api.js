@@ -59,6 +59,8 @@ export const fetchMyQueue = () =>
 export const fetchDepartments = () =>
   api.get("/departments").then((res) => res.data);
 
+export const fetchConsultationTypes = () =>
+  api.get("/consultation-types").then((res) => res.data);
 // ---- Doctors ----
 export const fetchDoctors = () =>
   api.get("/doctors").then((res) => res.data);
@@ -73,6 +75,9 @@ export const fetchMyAppointments = () =>
 
 export const createAppointment = (payload) =>
   api.post("/appointments", payload).then((res) => res.data);
+
+export const updateAppointment = (id, payload) =>
+  api.put(`/appointments/${id}`, payload).then((res) => res.data);
 
 // Time slots already taken for one doctor on one date, e.g. ["09:00", "10:00"].
 export const fetchBookedSlots = (doctorId, date) =>
@@ -95,6 +100,9 @@ export const fetchReceptionQueue = () =>
 
 export const fetchReceptionPatients = (search = "") =>
   api.get("/receptionist/patients", { params: { search } }).then((res) => res.data);
+
+export const registerPatient = (payload) =>
+  api.post("/patients/register", payload).then((res) => res.data);
 
 export const checkInAppointment = (id) =>
   api.post(`/receptionist/appointments/${id}/check-in`).then((res) => res.data);

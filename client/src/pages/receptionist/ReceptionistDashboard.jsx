@@ -17,6 +17,7 @@ import {
   callNextPatient,
   callSpecificPatient,
   updateQueueStatus,
+  registerPatient,
   checkInAppointment,
   fetchReceptionAppointments,
   fetchReceptionOverview,
@@ -27,9 +28,11 @@ import {
   markNotificationAsRead,
   fetchDepartments,
 fetchDoctors,
+fetchConsultationTypes,
 fetchDoctorDepartments,
 fetchBookedSlots,
 createAppointment,
+updateAppointment,
 } from "../../api/api";
 
 import "./ReceptionistDashboard.css";
@@ -655,13 +658,15 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const [consultationTypes, setConsultationTypes] = useState([]);
   const [form, setForm] = useState({
-    departmentId: "",
-    doctorId: "",
-    date: "",
-    time: "",
-    reason: "",
-  });
+  departmentId: "",
+  doctorId: "",
+  consultationTypeId: "",
+  date: "",
+  time: "",
+  reason: "",
+});
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
@@ -684,8 +689,11 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
   useEffect(() => {
     let active = true;
 
-    Promise.all([fetchDepartments(), fetchDoctors()])
-      .then(([departmentResult, doctorResult]) => {
+Promise.all([
+  fetchDepartments(),
+  fetchDoctors(),
+  fetchConsultationTypes(),
+])      .then(([departmentResult, doctorResult, consultationTypeResult]) => {
         if (!active) return;
 
         setDepartments(
@@ -698,6 +706,7 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
             ? doctorResult
             : doctorResult.data || []
         );
+        setConsultationTypes(consultationTypeResult.data || []);
       })
       .catch(() => {
         if (active) setError("Unable to load departments and doctors.");
@@ -747,12 +756,21 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
     )
   );
 
+  const availableConsultationTypes = consultationTypes.filter(
+  (type) => Number(type.departmentId) === Number(form.departmentId)
+);
+
+console.log("Consultation types:", consultationTypes);
+console.log("Selected department:", form.departmentId);
+console.log("Available consultation types:", availableConsultationTypes);
+
+
   const updateForm = (field, value) => {
     setForm((previous) => ({
       ...previous,
       [field]: value,
       ...(field === "departmentId"
-        ? { doctorId: "", time: "" }
+        ? { doctorId: "", consultationTypeId: "", time: "" }
         : {}),
       ...(field === "doctorId" || field === "date"
         ? { time: "" }
@@ -769,6 +787,7 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
       !selectedPatient ||
       !form.departmentId ||
       !form.doctorId ||
+      !form.consultationTypeId ||
       !form.date ||
       !form.time ||
       !form.reason.trim()
@@ -784,18 +803,20 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
         patientId: Number(selectedPatient.id),
         departmentId: Number(form.departmentId),
         doctorId: Number(form.doctorId),
+        consultationTypeId: Number(form.consultationTypeId),
         date: form.date,
         timeSlot: form.time,
         reason: form.reason.trim(),
       });
-
+      console.log("Selected patient:", selectedPatient);
       setSuccess(
-        `Appointment booked for ${selectedPatient.firstName} ${selectedPatient.lastName}. Status: Pending.`
-      );
+  `Appointment booked for ${selectedPatient.name}. Status: Pending.`
+);
 
       setForm({
         departmentId: "",
         doctorId: "",
+        consultationTypeId: "",
         date: "",
         time: "",
         reason: "",
@@ -908,6 +929,28 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
           ))}
         </select>
 
+        <label htmlFor="reception-booking-consultation">
+  Consultation Type
+</label>
+
+<select
+  id="reception-booking-consultation"
+  value={form.consultationTypeId}
+  onChange={(event) =>
+    updateForm("consultationTypeId", event.target.value)
+  }
+  disabled={!form.departmentId || availableConsultationTypes.length === 0}
+  required
+>
+  <option value="">Select consultation type</option>
+
+  {availableConsultationTypes.map((type) => (
+    <option key={type.id} value={type.id}>
+      {type.name} ({type.durationMinutes} minutes)
+    </option>
+  ))}
+</select>
+
         <label htmlFor="reception-booking-date">Appointment Date</label>
         <input
           id="reception-booking-date"
@@ -952,6 +995,192 @@ const ReceptionistBookingForm = ({ onBooked, onClose }) => {
   );
 };
 
+
+const RescheduleAppointmentForm = ({ appointment, onSaved, onClose }) => {
+  const [departments, setDepartments] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [form, setForm] = useState({
+    departmentId: String(appointment.departmentId || ""),
+    doctorId: String(appointment.doctorId || ""),
+    date: appointment.date
+      ? String(appointment.date).slice(0, 10)
+      : "",
+    time: "",
+    reason: appointment.reason || "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [slotRefreshKey, setSlotRefreshKey] = useState(0);
+
+  useEffect(() => {
+    Promise.all([fetchDepartments(), fetchDoctors()])
+      .then(([departmentResult, doctorResult]) => {
+        setDepartments(
+          Array.isArray(departmentResult)
+            ? departmentResult
+            : departmentResult.data || []
+        );
+        setDoctors(
+          Array.isArray(doctorResult)
+            ? doctorResult
+            : doctorResult.data || []
+        );
+      })
+      .catch(() => setError("Unable to load departments and doctors."));
+  }, []);
+
+  const availableDoctors = doctors.filter((doctor) =>
+    (doctor.departments || []).some(
+      (assignment) =>
+        Number(assignment.departmentId) === Number(form.departmentId)
+    )
+  );
+
+  const updateForm = (field, value) => {
+    setForm((previous) => ({
+      ...previous,
+      [field]: value,
+      ...(field === "departmentId"
+        ? { doctorId: "", time: "" }
+        : {}),
+      ...(field === "doctorId" || field === "date"
+        ? { time: "" }
+        : {}),
+    }));
+  };
+
+  const submitReschedule = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!form.departmentId || !form.doctorId || !form.date || !form.time) {
+      setError("Please select a department, doctor, date and available time.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const result = await updateAppointment(appointment.id, {
+        departmentId: Number(form.departmentId),
+        doctorId: Number(form.doctorId),
+        date: form.date,
+        timeSlot: form.time,
+        reason: form.reason.trim(),
+      });
+
+      setSuccess(result.message || "Appointment rescheduled successfully.");
+      await onSaved();
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          "Unable to reschedule appointment. Please try again."
+      );
+      setSlotRefreshKey((key) => key + 1);
+      setForm((previous) => ({ ...previous, time: "" }));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="reception-card">
+      <div className="reception-card-header">
+        <div>
+          <h3>Reschedule Appointment #{appointment.id}</h3>
+          <p>
+            {appointment.patientName} — currently {appointment.timeSlot}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="reception-search-button"
+          onClick={onClose}
+          disabled={loading}
+        >
+          Close
+        </button>
+      </div>
+
+      {error && <p role="alert">{error}</p>}
+      {success && <p role="status">{success}</p>}
+
+      <form onSubmit={submitReschedule} className="reception-booking-form">
+        <label htmlFor="reschedule-department">Department</label>
+        <select
+          id="reschedule-department"
+          value={form.departmentId}
+          onChange={(event) => updateForm("departmentId", event.target.value)}
+          required
+        >
+          <option value="">Select department</option>
+          {departments.map((department) => (
+            <option key={department.id} value={department.id}>
+              {department.name}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="reschedule-doctor">Doctor</label>
+        <select
+          id="reschedule-doctor"
+          value={form.doctorId}
+          onChange={(event) => updateForm("doctorId", event.target.value)}
+          disabled={!form.departmentId}
+          required
+        >
+          <option value="">Select doctor</option>
+          {availableDoctors.map((doctor) => (
+            <option key={doctor.id} value={doctor.id}>
+              Dr. {doctor.firstName} {doctor.lastName}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="reschedule-date">Appointment Date</label>
+        <input
+          id="reschedule-date"
+          type="date"
+          min={new Date(
+            Date.now() - new Date().getTimezoneOffset() * 60000
+          ).toISOString().slice(0, 10)}
+          value={form.date}
+          onChange={(event) => updateForm("date", event.target.value)}
+          required
+        />
+
+        <label>Available Time Slots</label>
+        <TimeSlotPicker
+          doctorId={form.doctorId}
+          date={form.date}
+          value={form.time}
+          refreshKey={slotRefreshKey}
+          onChange={(time) => updateForm("time", time)}
+        />
+
+        <label htmlFor="reschedule-reason">Reason for Visit</label>
+        <textarea
+          id="reschedule-reason"
+          rows={3}
+          value={form.reason}
+          onChange={(event) => updateForm("reason", event.target.value)}
+          required
+        />
+
+        <button
+          type="submit"
+          className="patient-registration-button"
+          disabled={loading}
+        >
+          {loading ? "Rescheduling..." : "Save New Appointment Time"}
+        </button>
+      </form>
+    </section>
+  );
+};
+
 const BookAppointmentSection = ({ onNavigate }) => {
   const handleBooked = () => {
     // The booking is already saved by ReceptionistBookingForm.
@@ -976,6 +1205,8 @@ const BookAppointmentSection = ({ onNavigate }) => {
 const AppointmentsSection = () => {
   const { data, loading, error, reload } = useLiveData(fetchReceptionAppointments, 60000);
   const action = useAction(reload);
+
+  const [reschedulingAppointment, setReschedulingAppointment] = useState(null);
 
   const stats = data?.stats;
 
@@ -1034,6 +1265,17 @@ const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
 
         <Notice notice={action.notice} />
 
+        {reschedulingAppointment && (
+  <RescheduleAppointmentForm
+    appointment={reschedulingAppointment}
+    onSaved={async () => {
+      setReschedulingAppointment(null);
+      await reload();
+    }}
+    onClose={() => setReschedulingAppointment(null)}
+  />
+)}
+
               <div className="reception-table-wrapper">
                 <table className="reception-table">
                   <thead>
@@ -1059,6 +1301,17 @@ const canCheckIn = (a) => ["PENDING", "CONFIRMED"].includes(a.status);
                             <StatusBadge status={appointmentStatus(a.status)} />
                           </td>
                           <td>
+                          {["PENDING", "CONFIRMED"].includes(a.status) && (
+                              <button
+                                type="button"
+                                className="reception-search-button"
+                                disabled={action.busy}
+                                style={busyStyle(action.busy)}
+                                onClick={() => setReschedulingAppointment(a)}
+                              >
+                                Reschedule
+                              </button>
+                            )}
                             {canCheckIn(a) ? (
                               <button
                                 type="button"
@@ -1196,7 +1449,48 @@ const PatientsSection = () => {
     () => fetchReceptionPatients(debouncedSearch),
     [debouncedSearch]
   );
-  const { data, loading, error } = useLiveData(loader);
+const { data, loading, error, reload } = useLiveData(loader);
+const action = useAction(reload);
+
+const initialPatientForm = {
+  firstName: "",
+  lastName: "",
+  idNumber: "",
+  email: "",
+  phone: "",
+  address: "",
+  password: "",
+  confirmPassword: "",
+};
+
+const [patientForm, setPatientForm] = useState(initialPatientForm);
+
+const handlePatientFormChange = (event) => {
+  const { name, value } = event.target;
+
+  setPatientForm((previous) => ({
+    ...previous,
+    [name]: value,
+  }));
+};
+
+const handlePatientRegistration = (event) => {
+  event.preventDefault();
+
+  action.run("register-patient", "Registering patient...", async () => {
+    if (patientForm.password !== patientForm.confirmPassword) {
+      throw new Error("Passwords do not match.");
+    }
+
+    const result = await registerPatient(patientForm);
+
+    setPatientForm(initialPatientForm);
+
+    return {
+      message: `${result.message} Patient number: ${result.patientNumber}`,
+    };
+  });
+};
 
   return (
     <>
@@ -1204,6 +1498,102 @@ const PatientsSection = () => {
         title="Patients"
         text="Search and view registered patient information."
       />
+
+
+    <section className="reception-card">
+  <div className="reception-card-header">
+    <div>
+      <h3>Register New Patient</h3>
+      <p>Enter the patient's details to create a new patient account.</p>
+    </div>
+  </div>
+
+  <form onSubmit={handlePatientRegistration} className="patient-registration-form">
+    <div className="patient-registration-grid">
+      <input
+        name="firstName"
+        placeholder="First name"
+        value={patientForm.firstName}
+        onChange={handlePatientFormChange}
+        required
+      />
+
+      <input
+        name="lastName"
+        placeholder="Last name"
+        value={patientForm.lastName}
+        onChange={handlePatientFormChange}
+        required
+      />
+
+      <input
+        name="idNumber"
+        placeholder="South African ID number"
+        value={patientForm.idNumber}
+        onChange={handlePatientFormChange}
+        required
+      />
+
+      <input
+        type="email"
+        name="email"
+        placeholder="Email address"
+        value={patientForm.email}
+        onChange={handlePatientFormChange}
+        required
+      />
+
+      <input
+        type="tel"
+        name="phone"
+        placeholder="Phone number"
+        value={patientForm.phone}
+        onChange={handlePatientFormChange}
+        required
+      />
+
+      <input
+        name="address"
+        placeholder="Residential address"
+        value={patientForm.address}
+        onChange={handlePatientFormChange}
+        required
+      />
+
+      <input
+        type="password"
+        name="password"
+        placeholder="Patient's password"
+        value={patientForm.password}
+        onChange={handlePatientFormChange}
+        required
+      />
+
+      <input
+        type="password"
+        name="confirmPassword"
+        placeholder="Confirm password"
+        value={patientForm.confirmPassword}
+        onChange={handlePatientFormChange}
+        required
+      />
+    </div>
+
+    <p className="patient-registration-hint">
+      The patient should enter their own password privately.
+    </p>
+
+    <Notice notice={action.notice} />
+
+    <button
+      type="submit"
+      className="patient-registration-button"
+      disabled={action.busy}
+    >
+      {action.busy ? "Registering..." : "Register Patient"}
+    </button>
+  </form>
+</section>
 
       <section className="reception-card">
         <div className="reception-card-header">

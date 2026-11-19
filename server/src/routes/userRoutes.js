@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -6,10 +7,13 @@ const {
     createUser
 } = require("../controllers/userController");
 
+const authenticate = require("../middleware/auth");
+const roleGuard = require("../middleware/roleGuard");
+
 const router = express.Router();
 
-router.get("/", getUsers);
-router.get("/:id", getUserById);
-router.post("/", createUser);
+router.get("/", authenticate, roleGuard("ADMIN"), getUsers);
+router.get("/:id", authenticate, roleGuard("ADMIN"), getUserById);
+router.post("/", authenticate, roleGuard("ADMIN"), createUser);
 
 module.exports = router;

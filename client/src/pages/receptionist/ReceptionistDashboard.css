@@ -1361,3 +1361,68 @@
 .reception-booking-form .slot-button:not(:disabled):focus-visible {
   outline-color: var(--reception-primary, #168a72);
 }
+
+/* Patient registration form */
+.patient-registration-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.patient-registration-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.patient-registration-grid input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #dce2e8;
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+  color: #17212b;
+}
+
+.patient-registration-grid input:focus {
+  outline: 2px solid #2685c5;
+  outline-offset: 1px;
+}
+
+.patient-registration-hint {
+  margin: 0;
+  color: var(--reception-muted);
+  font-size: 12px;
+}
+
+.patient-registration-button {
+  justify-self: start;
+  padding: 11px 18px;
+  border: none;
+  border-radius: 8px;
+  background: var(--reception-primary, #168a72);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.patient-registration-button:hover {
+  opacity: 0.9;
+}
+
+.patient-registration-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .patient-registration-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-registration-button {
+    width: 100%;
+  }
+}
