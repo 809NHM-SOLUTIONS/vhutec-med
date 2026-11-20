@@ -1,4 +1,8 @@
 const prisma = require("../prisma");
+const {
+    updateMyProfileSchema,
+    formatZodIssues
+} = require("../validators/patientProfileValidator");
 
 // GET /api/patients
 const getPatients = async (req, res) => {
@@ -397,7 +401,79 @@ const deletePatient = async (req, res) => {
 };
 
 
+// PUT /api/patients/me
+// Lets the logged-in patient update their own contact details.
+// Identity always comes from the verified JWT, never from the request body,
+// and only firstName, lastName, phone and address are accepted (see
+// validators/patientProfileValidator.js). ID number, date of birth, patient
+// number and email can only be corrected by staff.
+const updateMyProfile = async (req, res) => {
+    try {
+        const userId = Number(req.user?.userId);
+
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication required"
+            });
+        }
+
+        const validation = updateMyProfileSchema.safeParse(req.body ?? {});
+
+        if (!validation.success) {
+            const errors = formatZodIssues(validation.error.issues);
+
+            return res.status(400).json({
+                success: false,
+                message: errors[0].message,
+                errors
+            });
+        }
+
+        const existingPatient = await prisma.patient.findUnique({
+            where: { userId },
+            select: { id: true }
+        });
+
+        if (!existingPatient) {
+            return res.status(404).json({
+                success: false,
+                message: "Patient profile not found for this account"
+            });
+        }
+
+        const patient = await prisma.patient.update({
+            where: { userId },
+            data: validation.data,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true
+                    }
+                }
+            }
+        });
+
+        return res.json({
+            success: true,
+            message: "Profile updated successfully",
+            data: patient
+        });
+    } catch (error) {
+        console.error("Update my profile error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to update profile"
+        });
+    }
+};
+
+
 module.exports = {
+    updateMyProfile,
     getPatients,
     getMyProfile,
     getPatientById,

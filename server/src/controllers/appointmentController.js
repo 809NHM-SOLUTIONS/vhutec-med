@@ -4,6 +4,10 @@ const {
 } = require("../services/doctorShiftAvailability");
 const { notifyAppointmentStakeholders } = require("../services/appointmentNotifications");
 const { checkDoctorSlot } = require("../services/doctorAvailability");
+const {
+    isAppointmentInPast,
+    getCancellationBlock
+} = require("../utils/appointmentTime");
 
 
 // ---------------------------------------------------------------------------
@@ -766,14 +770,15 @@ const {
     reason
 } = req.body;
 
-        // New appointments must always start as PENDING.
+        // The status is set by the server: a successfully booked appointment is
+        // always CONFIRMED. A client may omit it or send CONFIRMED, nothing else.
         if (
             req.body.status !== undefined &&
-            req.body.status !== "PENDING"
+            req.body.status !== "CONFIRMED"
         ) {
             return res.status(400).json({
                 success: false,
-                message: "New appointments must start with PENDING status"
+                message: "Appointments are confirmed automatically when booked; status cannot be set manually"
             });
         }
         let parsedPatientId;
@@ -827,7 +832,53 @@ if (
             });
         }
 
+        if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return res.status(400).json({
+                success: false,
+                message: "Date must use the YYYY-MM-DD format"
+            });
+        }
+
+        if (
+            typeof timeSlot !== "string" ||
+            !/^([01]\d|2[0-3]):[0-5]\d$/.test(timeSlot)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Time slot must use the HH:mm format"
+            });
+        }
+
+        if (
+            typeof reason !== "string" ||
+            !reason.trim() ||
+            reason.trim().length > 500
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Reason must be between 1 and 500 characters"
+            });
+        }
+
         const appointmentDate = new Date(date);
+
+        // Reject impossible dates such as 2026-02-31 (JS would roll them over).
+        if (
+            Number.isNaN(appointmentDate.getTime()) ||
+            appointmentDate.toISOString().slice(0, 10) !== date
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid appointment date"
+            });
+        }
+
+        if (isAppointmentInPast(appointmentDate, timeSlot)) {
+            return res.status(400).json({
+                success: false,
+                message: "You cannot book an appointment in the past."
+            });
+        }
 
         if (Number.isNaN(appointmentDate.getTime())) {
             return res.status(400).json({
@@ -975,8 +1026,8 @@ if (conflictingAppointment) {
     durationMinutes,
     date: appointmentDate,
     timeSlot,
-    reason,
-    status: "PENDING"
+    reason: reason.trim(),
+    status: "CONFIRMED"
 },
             {
                 patient: true,
@@ -1001,6 +1052,7 @@ if (conflictingAppointment) {
 
         res.status(201).json({
             success: true,
+            message: "Your appointment has been successfully booked and confirmed.",
             data: appointment
         });
     } catch (error) {
@@ -1147,6 +1199,20 @@ if (req.user?.role === "PATIENT") {
         return res.status(400).json({
             success: false,
             message: "Appointment reason must be a non-empty string."
+        });
+    }
+
+    const patientScheduleChanged =
+        existingAppointment.date.getTime() !== appointmentDate.getTime() ||
+        existingAppointment.timeSlot !== effectiveTimeSlot;
+
+    if (
+        patientScheduleChanged &&
+        isAppointmentInPast(appointmentDate, effectiveTimeSlot)
+    ) {
+        return res.status(400).json({
+            success: false,
+            message: "You cannot move an appointment into the past."
         });
     }
 
@@ -1602,6 +1668,19 @@ if (!["PENDING", "CONFIRMED"].includes(existingAppointment.status)) {
     });
 }
 
+        if (
+            req.user?.role === "PATIENT" &&
+            isAppointmentInPast(
+                existingAppointment.date,
+                existingAppointment.timeSlot
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Past appointments cannot be cancelled."
+            });
+        }
+
         const appointment = await prisma.appointment.update({
             where: { id },
             data: { status: "CANCELLED" }
@@ -1631,6 +1710,121 @@ if (!["PENDING", "CONFIRMED"].includes(existingAppointment.status)) {
 };
 
 
+// PATCH /api/appointments/:id/cancel
+// Patient self-service cancellation. The row is never deleted: its status
+// becomes CANCELLED so the patient's appointment history is preserved, and
+// the slot is released (SLOT_HOLDING ignores CANCELLED appointments).
+// Eligible: the patient's own PENDING / CONFIRMED appointment that has not
+// started yet. Checked-in, in-progress, completed and missed ones are not.
+const cancelMyAppointment = async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid appointment ID"
+            });
+        }
+
+        const userId = Number(req.user?.userId);
+
+        // Ownership is part of the query, so another patient's appointment is
+        // indistinguishable from one that does not exist (no id probing).
+        const appointment = await prisma.appointment.findFirst({
+            where: { id, patient: { userId } },
+            select: {
+                id: true,
+                patientId: true,
+                status: true,
+                date: true,
+                timeSlot: true
+            }
+        });
+
+        if (!appointment) {
+            return res.status(404).json({
+                success: false,
+                message: "Appointment not found"
+            });
+        }
+
+        if (appointment.status === "CANCELLED") {
+            return res.json({
+                success: true,
+                message: "Appointment is already cancelled"
+            });
+        }
+
+        const blockReason = getCancellationBlock(appointment);
+
+        if (blockReason) {
+            return res.status(409).json({
+                success: false,
+                message: blockReason
+            });
+        }
+
+        // The status is checked again inside the update, so a receptionist
+        // checking the patient in at the same moment cannot be overwritten.
+        const result = await prisma.appointment.updateMany({
+            where: {
+                id,
+                patientId: appointment.patientId,
+                status: { in: ["PENDING", "CONFIRMED"] }
+            },
+            data: { status: "CANCELLED" }
+        });
+
+        if (result.count === 0) {
+            return res.status(409).json({
+                success: false,
+                message: "This appointment can no longer be cancelled."
+            });
+        }
+
+        const cancelled = await prisma.appointment.findUnique({
+            where: { id },
+            include: {
+                patient: true,
+                doctor: true,
+                department: true
+            }
+        });
+
+        // The cancellation is already saved; a notification problem must not
+        // turn it into an error for the patient.
+        try {
+            await notifyAppointmentStakeholders({
+                appointment: cancelled,
+                type: "APPOINTMENT_CANCELLED",
+                title: "Appointment cancelled",
+                message: "An appointment has been cancelled.",
+                eventKey: `appointment-cancelled:${id}`
+            });
+        } catch (notificationError) {
+            console.error(
+                "Cancel appointment notification failed:",
+                notificationError
+            );
+        }
+
+        return res.json({
+            success: true,
+            message: "Appointment cancelled successfully",
+            data: cancelled
+        });
+    } catch (error) {
+        console.error("Cancel my appointment error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to cancel appointment"
+        });
+    }
+};
+
+
 module.exports = {
     getAppointments,
     getMyAppointments,
@@ -1639,5 +1833,6 @@ module.exports = {
     getMissedAppointments,
     createAppointment,
     updateAppointment,
-    deleteAppointment
+    deleteAppointment,
+    cancelMyAppointment
 };

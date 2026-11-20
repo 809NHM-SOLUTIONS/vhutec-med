@@ -8,7 +8,8 @@ const {
     getMissedAppointments,
     createAppointment,
     updateAppointment,
-    deleteAppointment
+    deleteAppointment,
+    cancelMyAppointment
 } = require("../controllers/appointmentController");
 
 const authenticate = require("../middleware/auth");
@@ -21,6 +22,15 @@ router.get("/me", authenticate, roleGuard("PATIENT"), getMyAppointments);
 
 // Time slots already taken for a doctor on a date (times only, no patient data).
 router.get("/booked-slots", authenticate, getBookedSlots);
+
+// Patient self-service cancellation. The appointment row is kept (status becomes
+// CANCELLED) so the patient's appointment history is preserved.
+router.patch(
+    "/:id/cancel",
+    authenticate,
+    roleGuard("PATIENT"),
+    cancelMyAppointment
+);
 
 // Only staff roles can retrieve the full appointment list.
 router.get(

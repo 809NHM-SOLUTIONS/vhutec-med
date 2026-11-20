@@ -23,13 +23,16 @@ import {
   fetchDoctors,
   fetchMyAppointments,
   createAppointment,
+  cancelMyAppointment,
+  fetchConsultationTypes,
   fetchNotifications,
   fetchUnreadNotificationCount,
   markNotificationAsRead,
 } from "../../api/api";
 
 import PatientQueueStatus from "./patientQueueStatus";
-   import TimeSlotPicker from "./Timeslotpicker";
+import TimeSlotPicker from "./Timeslotpicker";
+import PatientProfileSection from "./PatientProfileSection";
 
 import "./PatientDashboard.css";
 
@@ -40,6 +43,15 @@ import useNotifications from "../../components/notifications/useNotifications";
 
 // Appointment.status is CANCELLED/COMPLETED => history, everything else => upcoming/active.
 const HISTORY_STATUSES = ["COMPLETED", "CANCELLED"];
+
+const EMPTY_APPOINTMENT_FORM = {
+  departmentId: "",
+  consultationTypeId: "",
+  doctorId: "",
+  date: "",
+  time: "",
+  reason: "",
+};
 
 const TIME_SLOTS = [
   "08:00",
@@ -238,6 +250,11 @@ function PatientDashboard() {
   // ---- Reference data for booking ----
   const [departments, setDepartments] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const [consultationTypes, setConsultationTypes] = useState([]);
+
+  // ---- Cancelling appointments ----
+  const [cancellingId, setCancellingId] = useState(null);
+  const [cancelNotice, setCancelNotice] = useState(null); // { type, message }
 
   const [referenceDataLoading, setReferenceDataLoading] = useState(true);
   const [referenceDataError, setReferenceDataError] = useState("");
@@ -304,13 +321,15 @@ useEffect(() => {
       setReferenceDataLoading(true);
       setReferenceDataError("");
 
-      const [departmentsRes, doctorsRes] = await Promise.all([
+      const [departmentsRes, doctorsRes, typesRes] = await Promise.all([
         fetchDepartments(),
         fetchDoctors(),
+        fetchConsultationTypes(),
       ]);
 
       setDepartments(departmentsRes.data || []);
       setDoctors(doctorsRes.data || []);
+      setConsultationTypes(typesRes.data || []);
 
 //       setDepartments(
 //   Array.isArray(departmentsRes)
@@ -407,7 +426,15 @@ useEffect(() => {
       // If a queue or appointment status changes, reload the appointments list!
       // This is what moves the patient from "Upcoming" to "History" automatically.
       if (
-        ["CONSULTATION_COMPLETED", "APPOINTMENT_CANCELLED", "PATIENT_CALLED", "QUEUE_UPDATED"].includes(notification.type)
+        [
+          "APPOINTMENT_BOOKED",
+          "APPOINTMENT_CONFIRMED",
+          "APPOINTMENT_RESCHEDULED",
+          "APPOINTMENT_CANCELLED",
+          "CONSULTATION_COMPLETED",
+          "PATIENT_CALLED",
+          "QUEUE_UPDATED",
+        ].includes(notification.type)
       ) {
         loadAppointments();
       }
@@ -454,13 +481,7 @@ useEffect(() => {
 };
 
   // ---- Booking form ----
-  const [appointmentForm, setAppointmentForm] = useState({
-    departmentId: "",
-    doctorId: "",
-    date: "",
-    time: "",
-    reason: "",
-  });
+  const [appointmentForm, setAppointmentForm] = useState(EMPTY_APPOINTMENT_FORM);
 
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bookingError, setBookingError] = useState("");
@@ -482,10 +503,22 @@ useEffect(() => {
     );
   }, [appointmentForm.departmentId, doctors]);
 
+  // Consultation types belong to one department (and set the visit length).
+  const availableConsultationTypes = useMemo(() => {
+    if (!appointmentForm.departmentId) return [];
+
+    const deptId = Number(appointmentForm.departmentId);
+
+    return consultationTypes.filter(
+      (type) => Number(type.departmentId) === deptId
+    );
+  }, [appointmentForm.departmentId, consultationTypes]);
+
   const handleDepartmentChange = (event) => {
     setAppointmentForm({
       ...appointmentForm,
       departmentId: event.target.value,
+      consultationTypeId: "", // types belong to one department
       doctorId: "", // reset doctor when department changes
       time: "", // a chosen time only applies to the previous doctor
     });
@@ -497,9 +530,17 @@ useEffect(() => {
     setBookingError("");
     setBookingSuccess(false);
 
-    const { departmentId, doctorId, date, time, reason } = appointmentForm;
+    const { departmentId, consultationTypeId, doctorId, date, time, reason } =
+      appointmentForm;
 
-    if (!departmentId || !doctorId || !date || !time || !reason.trim()) {
+    if (
+      !departmentId ||
+      !consultationTypeId ||
+      !doctorId ||
+      !date ||
+      !time ||
+      !reason.trim()
+    ) {
       setBookingError("Please fill in every field before submitting.");
       return;
     }
@@ -509,6 +550,7 @@ useEffect(() => {
 
       await createAppointment({
         departmentId: Number(departmentId),
+        consultationTypeId: Number(consultationTypeId),
         doctorId: Number(doctorId),
         date,
         timeSlot: time,
@@ -517,13 +559,7 @@ useEffect(() => {
 
       setBookingSuccess(true);
 
-      setAppointmentForm({
-        departmentId: "",
-        doctorId: "",
-        date: "",
-        time: "",
-        reason: "",
-      });
+      setAppointmentForm(EMPTY_APPOINTMENT_FORM);
 
       // Refresh so the new booking shows up immediately.
       loadAppointments();
@@ -536,7 +572,8 @@ useEffect(() => {
         setAppointmentForm((current) => ({ ...current, time: "" }));
         setSlotRefreshKey((key) => key + 1);
         setBookingError(
-          "That time was just booked by someone else. Please choose another available time."
+          error.message ||
+            "That time is no longer available. Please choose another time."
         );
       } else {
         setBookingError(
@@ -633,74 +670,39 @@ const nextAppointment = useMemo(() => {
     ? `${patient.firstName?.[0] || ""}${patient.lastName?.[0] || ""}`.toUpperCase()
     : "";
 
+  // After a save, refresh everything that shows the patient's name or phone:
+  // the header, the avatar initials and the dashboard summary card all read
+  // from `patient`. The copy stored at login is kept in step too.
+  const handleProfileSaved = (updatedPatient) => {
+    setPatient(updatedPatient);
+
+    try {
+      const stored = JSON.parse(localStorage.getItem("user") || "null");
+
+      if (stored?.patient) {
+        stored.patient = {
+          ...stored.patient,
+          firstName: updatedPatient.firstName,
+          lastName: updatedPatient.lastName,
+          phone: updatedPatient.phone,
+          address: updatedPatient.address,
+        };
+        localStorage.setItem("user", JSON.stringify(stored));
+      }
+    } catch (error) {
+      // The stored copy is only a convenience; never block the save on it.
+      console.error("Could not update the stored user:", error);
+    }
+  };
+
   const renderProfileSection = () => (
-    <section className="dashboard-section">
-      <div className="section-page-header">
-        <div>
-          <span className="section-label">PATIENT PROFILE</span>
-          <h2>My Profile</h2>
-          <p>View your personal and healthcare information.</p>
-        </div>
-      </div>
-
-      {profileLoading && <p>Loading your profile...</p>}
-      {profileError && <div className="auth-error">{profileError}</div>}
-
-      {patient && (
-        <div className="profile-page-card">
-          <div className="profile-page-header">
-            <div className="profile-page-avatar">{patientInitials}</div>
-
-            <div>
-              <h3>{patientFullName}</h3>
-              <p>Patient · ID {patient.patientNumber}</p>
-            </div>
-          </div>
-
-          <div className="profile-information-grid">
-  <div>
-    <span>Full Name</span>
-    <strong>{patientFullName}</strong>
-  </div>
-
-  <div>
-    <span>National ID Number</span>
-    <strong>{patient.idNumber}</strong>
-  </div>
-
-<div className="profile-detail">
-    <span>Patient Number</span>
-    <strong>{patient.patientNumber || "Not assigned"}</strong>
-</div>
-
-  <div>
-    <span>Date of Birth</span>
-    <strong>{formatDateDisplay(patient.dob)}</strong>
-  </div>
-
-  <div>
-    <span>Age</span>
-    <strong>{calculateAge(patient.dob)} years</strong>
-  </div>
-
-  <div>
-    <span>Phone Number</span>
-    <strong>{patient.phone}</strong>
-  </div>
-
-  <div>
-    <span>Email Address</span>
-    <strong>{patient.user?.email}</strong>
-  </div>
-
-  <div>
-    <span>Address</span>
-    <strong>{patient.address}</strong>
-  </div>
-</div>
-        </div>
-      )}
-    </section>
+    <PatientProfileSection
+      patient={patient}
+      loading={profileLoading}
+      error={profileError}
+      onSaved={handleProfileSaved}
+      onRetry={loadProfile}
+    />
   );
 
   const renderBookAppointmentSection = () => (
@@ -714,11 +716,8 @@ const nextAppointment = useMemo(() => {
         <div className="booking-success">
           <FiCheckCircle />
           <div>
-            <strong>Appointment request submitted</strong>
-            <p>
-              Your appointment has been recorded successfully and is now{" "}
-              <strong>Pending</strong> confirmation.
-            </p>
+            <strong>Appointment Confirmed</strong>
+            <p>Your appointment has been successfully booked and confirmed.</p>
           </div>
           <button
             type="button"
@@ -756,6 +755,39 @@ const nextAppointment = useMemo(() => {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="consultationType">Consultation Type</label>
+              <select
+                id="consultationType"
+                value={appointmentForm.consultationTypeId}
+                onChange={(event) =>
+                  setAppointmentForm({
+                    ...appointmentForm,
+                    consultationTypeId: event.target.value,
+                  })
+                }
+                disabled={!appointmentForm.departmentId}
+                required
+              >
+                <option value="">
+                  {appointmentForm.departmentId
+                    ? "Select consultation type"
+                    : "Select a department first"}
+                </option>
+                {availableConsultationTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name} ({type.durationMinutes} min)
+                  </option>
+                ))}
+              </select>
+              {appointmentForm.departmentId &&
+                availableConsultationTypes.length === 0 && (
+                  <small>
+                    No consultation types are available for this department yet.
+                  </small>
+                )}
             </div>
 
             <div className="form-group">
@@ -846,7 +878,7 @@ const nextAppointment = useMemo(() => {
                 disabled={bookingLoading}
               >
                 <FiCalendar />
-                {bookingLoading ? "Submitting..." : "Request Appointment"}
+                {bookingLoading ? "Booking..." : "Book Appointment"}
               </button>
             </div>
           </form>
@@ -855,7 +887,49 @@ const nextAppointment = useMemo(() => {
     </section>
   );
 
-  const renderAppointmentsTable = (list) => (
+  // A patient may cancel PENDING / CONFIRMED appointments that have not
+  // started. The server re-checks all of this; this only decides the button.
+  const canCancelAppointment = (appointment) =>
+    ["PENDING", "CONFIRMED"].includes(appointment.status) &&
+    !isAppointmentBeingHandled(appointment) &&
+    !isAppointmentTimePassed(appointment);
+
+  const handleCancelAppointment = async (appointment) => {
+    const when = `${formatDateDisplay(appointment.date)} at ${appointment.timeSlot}`;
+
+    if (
+      !window.confirm(
+        `Cancel your appointment on ${when}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    setCancelNotice(null);
+
+    try {
+      setCancellingId(appointment.id);
+      await cancelMyAppointment(appointment.id);
+      setCancelNotice({
+        type: "success",
+        message: "Your appointment has been cancelled.",
+      });
+      // Moves it to Appointment History and updates the counts and calendar.
+      await loadAppointments();
+    } catch (error) {
+      console.error("Cancel appointment error:", error);
+      setCancelNotice({
+        type: "error",
+        message: error.message || "Unable to cancel the appointment.",
+      });
+      // The status may have changed (e.g. checked in) - show the latest.
+      loadAppointments();
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const renderAppointmentsTable = (list, { allowCancel = false } = {}) => (
     <div className="appointments-table-wrapper">
       <table className="appointments-table">
         <thead>
@@ -865,13 +939,14 @@ const nextAppointment = useMemo(() => {
             <th>Date</th>
             <th>Time</th>
             <th>Status</th>
+            {allowCancel && <th>Action</th>}
           </tr>
         </thead>
 
         <tbody>
           {list.length === 0 ? (
             <tr>
-              <td colSpan={5}>No appointments to show.</td>
+              <td colSpan={allowCancel ? 6 : 5}>No appointments to show.</td>
             </tr>
           ) : (
             list.map((appointment) => (
@@ -899,6 +974,23 @@ const nextAppointment = useMemo(() => {
                     {statusLabel(appointment.status)}
                   </span>
                 </td>
+
+                {allowCancel && (
+                  <td>
+                    {canCancelAppointment(appointment) ? (
+                      <button
+                        type="button"
+                        className="text-button cancel-appointment-button"
+                        disabled={cancellingId === appointment.id}
+                        onClick={() => handleCancelAppointment(appointment)}
+                      >
+                        {cancellingId === appointment.id
+                          ? "Cancelling..."
+                          : "Cancel"}
+                      </button>
+                    ) : null}
+                  </td>
+                )}
               </tr>
             ))
           )}
@@ -913,6 +1005,27 @@ const nextAppointment = useMemo(() => {
       <h2>My Appointments</h2>
       <p>View and manage your upcoming and scheduled appointments.</p>
     </div>
+
+    {cancelNotice && (
+      <div
+        className={`appointments-notice ${
+          cancelNotice.type === "success" ? "booking-success" : "auth-error"
+        }`}
+        role={cancelNotice.type === "success" ? "status" : "alert"}
+      >
+        {cancelNotice.type === "success" && <FiCheckCircle />}
+        <div>
+          <p>{cancelNotice.message}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCancelNotice(null)}
+          aria-label="Close message"
+        >
+          <FiX />
+        </button>
+      </div>
+    )}
 
     <div className="appointments-list-card">
       <div className="appointments-list-header">
@@ -952,7 +1065,7 @@ const nextAppointment = useMemo(() => {
           </button>
         </div>
       ) : (
-        renderAppointmentsTable(upcomingAppointments)
+        renderAppointmentsTable(upcomingAppointments, { allowCancel: true })
       )}
     </div>
   </section>

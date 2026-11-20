@@ -6,7 +6,8 @@ const {
     createPatient,
     updatePatient,
     deletePatient,
-    getMyProfile
+    getMyProfile,
+    updateMyProfile
 } = require("../controllers/patientController");
 
 const { getMyQueue } = require("../controllers/patientQueueController");
@@ -25,6 +26,15 @@ router.get(
     authenticate,
     roleGuard("PATIENT"),
     getMyProfile
+);
+
+// Patient portal: patients can update their own contact details.
+// Must stay above "PUT /:id", otherwise Express would treat "me" as an id.
+router.put(
+    "/me",
+    authenticate,
+    roleGuard("PATIENT"),
+    updateMyProfile
 );
 
 // Patient portal: patients can view their own live queue status.

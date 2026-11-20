@@ -52,6 +52,10 @@ export default api;
 export const fetchMyProfile = () =>
   api.get("/patients/me").then((res) => res.data);
 
+// Patients may update only firstName, lastName, phone and address.
+export const updateMyProfile = (payload) =>
+  api.put("/patients/me", payload).then((res) => res.data);
+
 export const fetchMyQueue = () =>
   api.get("/patients/me/queue").then((res) => res.data);
 
@@ -59,8 +63,13 @@ export const fetchMyQueue = () =>
 export const fetchDepartments = () =>
   api.get("/departments").then((res) => res.data);
 
-export const fetchConsultationTypes = () =>
-  api.get("/consultation-types").then((res) => res.data);
+// Optionally limited to one department: fetchConsultationTypes(departmentId).
+export const fetchConsultationTypes = (departmentId) =>
+  api
+    .get("/consultation-types", {
+      params: departmentId ? { departmentId } : {},
+    })
+    .then((res) => res.data);
 // ---- Doctors ----
 export const fetchDoctors = () =>
   api.get("/doctors").then((res) => res.data);
@@ -78,6 +87,10 @@ export const createAppointment = (payload) =>
 
 export const updateAppointment = (id, payload) =>
   api.put(`/appointments/${id}`, payload).then((res) => res.data);
+
+// Patient cancels their own appointment. The record is kept with status CANCELLED.
+export const cancelMyAppointment = (id) =>
+  api.patch(`/appointments/${id}/cancel`).then((res) => res.data);
 
 // Time slots already taken for one doctor on one date, e.g. ["09:00", "10:00"].
 export const fetchBookedSlots = (doctorId, date) =>
